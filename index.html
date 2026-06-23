@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Big Benchas — CRM</title>
+<style>
+  :root{
+    --bg:#090C12;--bg2:#0E1219;--panel:#141925;--panel2:#1A2030;--card:#161C28;--card-hover:#1C2435;
+    --border:#242C3B;--border-soft:#1E2533;--text:#EAEEF6;--muted:#8B95A8;--muted2:#5E6677;
+    --accent:#4F8DFD;--accent2:#2DD4BF;
+    --new:#7A8699;--convo:#4F8DFD;--script:#A874FF;--closer:#F5A524;--booked:#22C55E;--won:#EAB308;
+    --hot:#22C55E;--warm:#4F8DFD;--cool:#F5A524;--cold:#7A8699;
+    --shadow:0 10px 30px -12px rgba(0,0,0,.7);
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden;
+    background:radial-gradient(1200px 600px at 12% -10%,rgba(79,141,253,.10),transparent 60%),
+               radial-gradient(1000px 500px at 100% 0%,rgba(45,212,191,.06),transparent 55%),var(--bg);}
+  ::-webkit-scrollbar{width:8px;height:9px}::-webkit-scrollbar-thumb{background:#222a39;border-radius:10px}
+
+  .shell{display:flex;height:100vh}
+
+  /* sidebar */
+  .side{width:230px;min-width:230px;border-right:1px solid var(--border-soft);display:flex;flex-direction:column;
+    background:linear-gradient(180deg,rgba(20,25,37,.55),rgba(9,12,18,.4))}
+  .brand{display:flex;align-items:center;gap:11px;padding:18px 18px 16px}
+  .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:grid;place-items:center;font-weight:800;color:#06121f;font-size:15px;box-shadow:0 6px 16px -6px rgba(79,141,253,.6)}
+  .brand h1{font-size:15px;font-weight:800;letter-spacing:.2px}.brand .sub{font-size:10.5px;color:var(--muted)}
+  .nav{padding:6px 12px;display:flex;flex-direction:column;gap:3px;flex:1}
+  .nav .lbl{font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;padding:14px 10px 6px}
+  .navitem{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:600;transition:.13s}
+  .navitem:hover{background:var(--panel);color:var(--text)}
+  .navitem.active{background:var(--panel2);color:#fff}
+  .navitem.active .ic{filter:drop-shadow(0 0 6px rgba(79,141,253,.5))}
+  .navitem .ic{width:18px;text-align:center;font-size:15px}
+  .navitem .badge{margin-left:auto;font-size:10px;font-weight:700;background:var(--accent);color:#fff;padding:1px 7px;border-radius:20px}
+  .side-foot{padding:12px;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:10px}
+  .avatar-me{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#22C55E,#16a34a);display:grid;place-items:center;font-weight:700;font-size:13px;color:#04210f}
+  .side-foot .nm{font-size:13px;font-weight:700}.side-foot .rl{font-size:10.5px;color:var(--muted)}
+
+  /* main */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--border-soft);
+    background:linear-gradient(180deg,rgba(20,25,37,.5),transparent)}
+  .topbar h2{font-size:18px;font-weight:800;letter-spacing:-.2px}
+  .topbar .tsub{font-size:12px;color:var(--muted);margin-top:1px}
+  .search{flex:1;max-width:360px;display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 13px;color:var(--muted)}
+  .search input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%;font-family:var(--font)}
+  .search input::placeholder{color:var(--muted2)}
+  .spacer{flex:1}
+  .livechip{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#9be8c0;background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.25);padding:6px 11px;border-radius:20px}
+  .dot{width:7px;height:7px;border-radius:50%;background:#22C55E;animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+  .proto-badge{font-size:10px;font-weight:700;color:#f7c065;background:rgba(245,165,36,.12);border:1px solid rgba(245,165,36,.3);padding:5px 10px;border-radius:20px}
+  .view{flex:1;overflow:auto;padding:22px 24px}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);font-size:13px;font-weight:600;color:var(--text);cursor:pointer;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 14px;transition:.15s}
+  .btn:hover{background:var(--panel2);border-color:#33405a}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),#3b7bf0);border-color:transparent;color:#fff}
+  .btn.sm{padding:6px 11px;font-size:12px}
+
+  /* score ring + pill */
+  .ring{position:relative;border-radius:50%;display:grid;place-items:center;flex-shrink:0}
+  .ring .inner{background:var(--bg);border-radius:50%;display:grid;place-items:center;flex-direction:column;text-align:center}
+  .ring .sc{font-weight:800;line-height:1}
+  .scpill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 9px 3px 6px;border-radius:20px}
+  .scpill .d{width:7px;height:7px;border-radius:50%}
+
+  /* cards/grid */
+  .grid{display:grid;gap:14px}
+  .panel-card{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--border-soft);border-radius:16px;padding:16px}
+  .panel-card h3{font-size:13px;font-weight:700}.panel-card .ph{display:flex;align-items:center;gap:8px;margin-bottom:13px}
+  .kpi .label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .kpi .val{font-size:26px;font-weight:800;margin-top:6px;letter-spacing:-.6px}
+  .kpi .delta{font-size:11px;font-weight:600;margin-top:3px}
+  .up{color:#4ade80}.down{color:#f87171}.flat{color:var(--muted)}
+
+  /* lists */
+  .lead-line{display:flex;align-items:center;gap:11px;padding:9px;border-radius:11px;cursor:pointer;transition:.12s}
+  .lead-line:hover{background:var(--panel2)}
+  .ava{border-radius:11px;display:grid;place-items:center;font-weight:700;color:#fff;flex-shrink:0;position:relative}
+  .plat{position:absolute;bottom:-3px;right:-3px;width:15px;height:15px;border-radius:5px;display:grid;place-items:center;font-size:8px;font-weight:800;color:#fff;border:2px solid var(--bg)}
+  .ig{background:linear-gradient(135deg,#feda75,#d62976,#962fbf)}.fb{background:#1877F2}
+  .stage-chip{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+
+  /* insight rows */
+  .insight{display:flex;gap:11px;padding:11px;border-radius:12px;background:var(--card);border:1px solid var(--border);margin-bottom:9px}
+  .insight .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex-shrink:0}
+  .insight .it{font-size:12.5px;font-weight:700}.insight .id{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+
+  /* table */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--border-soft);cursor:pointer;user-select:none}
+  th:hover{color:var(--text)}
+  td{padding:11px 12px;border-bottom:1px solid var(--border-soft);font-size:13px}
+  tr.lrow{cursor:pointer;transition:.12s}tr.lrow:hover td{background:var(--panel)}
+  .bar{height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;width:90px}
+  .bar i{display:block;height:100%;border-radius:6px}
+
+  /* kanban */
+  .board{display:flex;gap:14px;height:100%;overflow-x:auto;padding-bottom:6px}
+  .col{width:280px;min-width:280px;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(20,25,37,.5),rgba(14,18,25,.35));border:1px solid var(--border-soft);border-radius:16px;max-height:100%}
+  .col-head{padding:13px 14px 11px;position:relative}
+  .col-head::before{content:"";position:absolute;top:0;left:14px;right:14px;height:3px;border-radius:0 0 4px 4px;background:var(--c)}
+  .col-title{display:flex;align-items:center;gap:9px}.col-title .cdot{width:9px;height:9px;border-radius:50%;background:var(--c)}
+  .col-title h3{font-size:13px;font-weight:700}.count{margin-left:auto;font-size:11px;font-weight:700;color:var(--muted);background:var(--panel2);border:1px solid var(--border);padding:2px 9px;border-radius:20px}
+  .cards{padding:11px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1}
+  .col.dragover{outline:2px dashed var(--c);outline-offset:-4px}
+  .kcard{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;cursor:grab;transition:.14s;position:relative}
+  .kcard:hover{background:var(--card-hover);border-color:#33405a;transform:translateY(-2px);box-shadow:var(--shadow)}
+  .kcard.dragging{opacity:.5}
+  .kcard .top{display:flex;align-items:center;gap:10px}
+  .kcard .nm{font-size:13px;font-weight:700}.kcard .hd{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .kcard .snip{font-size:11.5px;color:var(--muted);margin-top:9px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
+  .kcard .foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--border-soft);font-size:10px;color:var(--muted2)}
+  .more{text-align:center;font-size:11px;color:var(--muted);padding:9px;border:1px dashed var(--border);border-radius:11px;font-weight:600}
+
+  /* inbox */
+  .inbox{display:flex;height:100%}
+  .ilist{width:300px;min-width:300px;border-right:1px solid var(--border-soft);display:flex;flex-direction:column}
+  .itabs{display:flex;gap:6px;padding:0 4px 10px;flex-wrap:wrap}
+  .itab{font-size:11.5px;font-weight:600;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:5px 10px;border-radius:20px;cursor:pointer}
+  .itab.active{background:var(--accent);border-color:transparent;color:#fff}
+  .iconvos{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px}
+  .crow{display:flex;gap:10px;padding:10px;border-radius:12px;cursor:pointer;transition:.12s}
+  .crow:hover{background:var(--panel)}.crow.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
+  .crow .nm{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crow .tm{font-size:10px;color:var(--muted2);margin-left:auto}
+  .crow .snip{font-size:11.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .unread{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(79,141,253,.8)}
+  .thread{flex:1;display:flex;flex-direction:column;min-width:0}
+  .t-head{display:flex;align-items:center;gap:12px;padding:6px 6px 14px;border-bottom:1px solid var(--border-soft)}
+  .msgs{flex:1;overflow-y:auto;padding:18px 6px;display:flex;flex-direction:column;gap:11px}
+  .m{max-width:78%;display:flex;flex-direction:column;gap:3px}.m.them{align-self:flex-start}.m.us{align-self:flex-end;align-items:flex-end}
+  .bub{padding:10px 13px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .them .bub{background:var(--card);border:1px solid var(--border);border-bottom-left-radius:4px}
+  .us .bub{background:linear-gradient(135deg,#3b7bf0,#4F8DFD);color:#fff;border-bottom-right-radius:4px}
+  .us .bub a{color:#fff}
+  .who{font-size:9px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:0 6px}
+  .mtime{font-size:9.5px;color:var(--muted2);padding:0 6px}
+  .ai-tag{font-size:8.5px;font-weight:700;color:#8fb6fd;background:rgba(79,141,253,.15);padding:1px 5px;border-radius:5px;margin-left:5px}
+  .composer{border-top:1px solid var(--border-soft);padding:12px 6px 4px}
+  .sugg{display:flex;gap:7px;margin-bottom:9px;flex-wrap:wrap}
+  .sugg .lbl{font-size:10px;font-weight:700;color:#8fb6fd;align-self:center}
+  .schip{font-size:11.5px;font-weight:500;color:var(--text);background:rgba(79,141,253,.10);border:1px solid rgba(79,141,253,.28);padding:6px 11px;border-radius:18px;cursor:pointer;transition:.13s;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .schip:hover{background:rgba(79,141,253,.2)}
+  .cbox{display:flex;align-items:flex-end;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:7px 7px 7px 13px}
+  .cbox textarea{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:var(--font);resize:none;max-height:110px;line-height:1.5;padding:6px 0}
+  .send{width:36px;height:36px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(135deg,var(--accent),#3b7bf0);color:#fff;font-size:15px;flex-shrink:0}
+  .ictx{width:280px;min-width:280px;border-left:1px solid var(--border-soft);overflow-y:auto;padding-left:16px}
+  .sec{padding:14px 0;border-bottom:1px solid var(--border-soft)}
+  .sec h4{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px;font-weight:700}
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0}.kv .k{color:var(--muted)}.kv .v{font-weight:600}
+  .answer{display:flex;gap:9px;font-size:12.5px;padding:7px 0}
+  .answer .ck{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:900;flex-shrink:0;margin-top:1px}
+  .answer .ck.ok{background:rgba(34,197,94,.15);color:#4ade80}.answer .ck.no{background:var(--panel2);color:var(--muted2)}
+  .answer .q{color:var(--muted);font-size:11px}.answer .a{font-weight:600;margin-top:1px}
+  .coach{background:linear-gradient(135deg,rgba(79,141,253,.12),rgba(45,212,191,.06));border:1px solid rgba(79,141,253,.25);border-radius:12px;padding:12px;font-size:12.5px;line-height:1.5}
+  .coach .h{font-size:10px;font-weight:700;color:#8fb6fd;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .factor{margin:9px 0}.factor .fr{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px}.factor .fr .fp{color:var(--muted);font-weight:600}
+  .ctag{font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+
+  /* funnel */
+  .funnel{display:flex;flex-direction:column;gap:8px}
+  .frow{display:flex;align-items:center;gap:12px}
+  .frow .fl{width:120px;font-size:12px;color:var(--muted);font-weight:600}
+  .ftrack{flex:1;height:34px;border-radius:9px;background:var(--panel2);overflow:hidden;position:relative}
+  .ftrack i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--accent),var(--accent2));display:flex;align-items:center;padding-left:12px;font-size:12px;font-weight:800;color:#06121f}
+  .fpct{width:54px;text-align:right;font-size:12px;color:var(--muted);font-weight:700}
+
+  .toasts{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:9px;align-items:center}
+  .toast{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;background:linear-gradient(135deg,#13351f,#0f2a1a);border:1px solid rgba(34,197,94,.35);color:#bdf0d0;padding:11px 16px;border-radius:12px;box-shadow:var(--shadow);animation:pop .3s ease, fade .3s ease 2.4s forwards}
+  .toast.err{background:linear-gradient(135deg,#3a1417,#2a0f12);border-color:rgba(248,113,113,.4);color:#f6c6cb}
+  .toast .tdot{width:18px;height:18px;border-radius:50%;background:#22C55E;display:grid;place-items:center;color:#04210f;font-size:11px;font-weight:900}
+  @keyframes pop{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes fade{to{opacity:0;transform:translateY(8px)}}
+  .muted{color:var(--muted)}
+  .switch{position:relative;width:38px;height:22px;border-radius:20px;background:var(--panel2);border:1px solid var(--border);cursor:pointer;transition:.15s}
+  .switch.on{background:var(--accent);border-color:transparent}
+  .switch i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .switch.on i{left:18px}
+  .inp{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:8px 11px;color:var(--text);font-size:12.5px;font-family:var(--font);width:100%;outline:none}
+  @media(max-width:1150px){.ictx{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><div class="logo">BB</div><div><h1>Big Benchas</h1><div class="sub">Sales CRM</div></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot"><div class="avatar-me">CB</div><div><div class="nm">Coach Ben</div><div class="rl">Owner</div></div></div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div><h2 id="ptitle">Dashboard</h2><div class="tsub" id="psub"></div></div>
+      <div class="search"><span>🔍</span><input id="gsearch" placeholder="Search leads, tags, messages…"></div>
+      <div class="spacer"></div>
+      <div id="livewrap"></div>
+    </div>
+    <div class="view" id="view"></div>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* =========================================================================
+   Big Benchas CRM — live front-end.
+   HighLevel is the single source of truth. The browser talks ONLY to the
+   Supabase edge function (which holds the HL token). If the backend is
+   unreachable, the app falls back to demo data so it always renders.
+   ========================================================================= */
+
+const CONFIG = {
+  fnUrl:       "https://kujrcdkswpjrjmnmciai.functions.supabase.co/hl",
+  supabaseUrl: "https://kujrcdkswpjrjmnmciai.supabase.co",
+  anonKey:     "sb_publishable_LO0Znh4ZhwOMzAO8rjAhZw_BieIrkjF",
+  refreshMs:   30000,
+};
+
+/* The "DM's" pipeline stages (from ?action=pipelines). Refreshed live on boot. */
+let STAGES = [
+  {id:"e62c618c-0730-4063-9e1b-9971360ed326",name:"Contacted"},
+  {id:"ff8db1b2-df7e-4001-89bf-73dbe81884e8",name:"Warm Lead"},
+  {id:"daad3279-aa80-490a-a0c1-1b3fd55c53ca",name:"Script Started"},
+  {id:"0937f62c-3b27-4d70-960a-9511285432b1",name:"Call Booked"},
+  {id:"4a1285d1-5853-4b30-8d95-f89a4bc9afc4",name:"Freebie Follow Up"},
+  {id:"5de97c6b-c795-409a-94d0-bc754f36f76f",name:"Nurture (Scheduled)"},
+  {id:"a6f8b95d-e1f6-4cfe-ab3f-9e80326fbc22",name:"Follow Up Due"},
+  {id:"08edc1c2-4003-421f-822e-90d828ec8fff",name:"Old Leads"},
+  {id:"950884c5-6c0f-4b6f-9454-34e02bcea14f",name:"Downsell"},
+  {id:"031e6379-3175-4fe2-bb0b-883a8438024d",name:"Current Athlete"},
+  {id:"04468cab-56a2-4ae2-ba29-1084bc6064b6",name:"Past Athlete"},
+];
+const STAGE_PALETTE=['#7A8699','#4F8DFD','#A874FF','#22C55E','#06B6D4','#14B8A6','#F5A524','#6366F1','#F97316','#EAB308','#5E6677'];
+function stageColorByIndex(i){return STAGE_PALETTE[i%STAGE_PALETTE.length]}
+function stageById(id){return STAGES.find(s=>s.id===id)}
+function stageGroup(name){
+  const s=(name||'').toLowerCase();
+  if(s.includes('current athlete')||s.includes('coaching athlete')||s.includes('membership')) return 'won';
+  if(s.includes('call booked')||s.includes('booked')) return 'booked';
+  if(s.includes('downsell')) return 'closer';
+  if(s.includes('script')) return 'script';
+  if(s.includes('contacted')||s.includes('warm')||s==='') return 'convo';
+  return 'nurture';
+}
+
+/* ---------------- avatar / score helpers ---------------- */
+const AVA=['#4F8DFD','#A874FF','#F5A524','#22C55E','#EC4899','#14B8A6','#F97316','#6366F1','#EAB308','#06B6D4'];
+const avaColor=n=>{let s=0;for(const c of (n||'?'))s+=c.charCodeAt(0);return AVA[s%AVA.length]};
+const initials=n=>(n||'?').split(' ').filter(Boolean).slice(0,2).map(x=>x[0].toUpperCase()).join('')||'?';
+const STAGEBG_score=s=>({hot:'rgba(34,197,94,.13)',warm:'rgba(79,141,253,.13)',cool:'rgba(245,165,36,.13)',cold:'rgba(122,134,153,.13)'})[sc(s)];
+function sc(score){return score>=80?'hot':score>=58?'warm':score>=38?'cool':'cold'}
+function scColor(score){return `var(--${sc(score)})`}
+function scLabel(score){return {hot:'Hot',warm:'Warm',cool:'Cool',cold:'Cold'}[sc(score)]}
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ---------------- demo fallback (used only if backend unreachable) ---------------- */
+const DEMO=[
+{name:'José',plat:'ig',loc:'México',yrs:'4 yrs',group:'booked',unread:false,needs:false,time:'9h',booked:true,score:92,
+ coach:'Fully bought in and booked. Confirm the call and have his 150kg bench plan ready — this one closes.',
+ factors:[['Intent signals',28,30],['Qualification',25,25],['Engagement',22,25],['Fit',17,20]],
+ ans:{age:'37',loc:'México',blocker:'Bench stalled at 130kg',goal:'150kg bench this year'},tags:['Strategy Call','closer'],
+ lastMessage:"booked for Tuesday 3pm 💪",
+ sug:['Confirm Tuesday 3pm and ask him to send his last bench video.','Love it José — see you Tuesday. Anything you want me to look at before the call?'],
+ msgs:[{who:'us',ai:1,t:"Perfect, before we go deeper, how old are you and what country are you based in?",time:'Mon 2:09 PM'},
+  {who:'them',t:"37 years, México",time:'Mon 9:02 PM'},
+  {who:'us',ai:1,t:"Awesome, here is my calendar. http://tinyurl.com/strategy-call-coachben",time:'Tue 9:17 AM'},
+  {who:'them',t:"booked for Tuesday 3pm 💪",time:'Tue 11:40 AM'}]},
+{name:'Devon Pratt',plat:'fb',loc:'USA',yrs:'7 yrs',group:'closer',unread:true,needs:true,time:'2h',booked:false,score:88,
+ coach:'Asked about price — that is a peak buying signal. Do not over-explain. Drop the booking link now.',
+ factors:[['Intent signals',27,30],['Qualification',22,25],['Engagement',21,25],['Fit',18,20]],
+ ans:{age:'31',loc:'USA',blocker:'No structure, winging programming',goal:'1500 total'},tags:['hot','closer'],
+ lastMessage:"sounds good, what's the investment look like?",
+ sug:['Great question — happy to walk you through it on a quick call. Here is my calendar: http://tinyurl.com/strategy-call-coachben'],
+ msgs:[{who:'them',t:"sounds good, what's the investment look like?",time:'Today 11:58 AM'}]},
+{name:'Marcus Hill',plat:'ig',loc:'USA',yrs:'3 yrs',group:'convo',unread:false,needs:false,time:'7h',booked:false,score:70,
+ coach:'Meet in 12 weeks = urgency. Move him to qualify fast — time pressure is your friend.',
+ factors:[['Intent signals',18,30],['Qualification',16,25],['Engagement',19,25],['Fit',17,20]],
+ ans:{age:null,loc:'USA',blocker:null,goal:'Total elite at meet in 12wk'},tags:['meet 12wk'],
+ lastMessage:"about 3 years now",
+ sug:['12 weeks is the perfect window to dial it in. What are you opening with on each lift?'],
+ msgs:[{who:'them',t:"got a meet in 12 weeks, trying to total elite",time:'Today 7:02 AM'},
+  {who:'them',t:"about 3 years now",time:'Today 7:20 AM'}]},
+{name:'Tommy Bowman',plat:'ig',loc:'USA',yrs:'—',group:'convo',unread:true,needs:true,time:'1h',booked:false,score:42,
+ coach:'Technique question, not yet a prospect. Give value, then pivot: how long have you been competing?',
+ factors:[['Intent signals',8,30],['Qualification',5,25],['Engagement',13,25],['Fit',16,20]],
+ ans:{age:null,loc:null,blocker:null,goal:null},tags:['comment lead'],
+ lastMessage:"how do I fix my setup?",
+ sug:['Flared elbows are usually the culprit — tuck to ~45° on the way down. How long have you been benching?'],
+ msgs:[{who:'them',t:"I used to bench with my elbows really flared. how do I fix my setup?",time:'Today 1:12 PM'}]},
+{name:'Vimal',plat:'ig',loc:'India',yrs:'6 yrs',group:'closer',unread:false,needs:false,time:'1d',booked:false,score:21,
+ coach:'India + budget tight = outside the call funnel. Route to the Foundations resource, do not push a call.',
+ factors:[['Intent signals',7,30],['Qualification',9,25],['Engagement',8,25],['Fit',2,20]],
+ ans:{age:null,loc:'India',blocker:'Budget',goal:null},tags:['Foundations'],
+ lastMessage:"India, and budget is a bit tight right now",
+ sug:['Totally understand. Here is a free resource to get you started: the Bench Blueprint 💪'],
+ msgs:[{who:'them',t:"India, and budget is a bit tight right now",time:'Yest 3:22 PM'}]},
+];
+
+/* ---------------- state ---------------- */
+let LEADS=[], LIVE=false, syncedAt=null, loadError=null, authFailed=false;
+let cur='dashboard', activeId=null, iTab='all', leadSort='score';
+let APP_KEY = localStorage.getItem('bb_crm_key') || '';
+
+/* every request carries the shared passcode */
+function authHeaders(extra){ return Object.assign({'x-app-key':APP_KEY}, extra||{}); }
+function authGet(path){ return fetch(`${CONFIG.fnUrl}${path}`, {headers:authHeaders()}); }
+const post = (body)=>fetch(CONFIG.fnUrl,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(body)}).then(r=>r.json());
+
+function normalizeLead(l,i){
+  l.id = l.contactId || l.id || ('demo'+i);
+  l.name = l.name || 'Unknown';
+  l.plat = l.plat || 'ig';
+  l.score = l.score ?? 0;
+  l.tier = l.tier || scLabel(l.score);
+  l.tags = l.tags || [];
+  l.loc = l.loc || '—';
+  l.yrs = l.yrs || '—';
+  l.time = l.time || '—';
+  l.ans = l.ans || {age:null,loc:l.loc,blocker:null,goal:null};
+  l.lastMessage = l.lastMessage || (l.msgs && l.msgs.length ? l.msgs[l.msgs.length-1].t : '');
+  l.stageName = l.stageName || (l.stageId ? (stageById(l.stageId)?.name||'') : '');
+  l.group = l.group || (l.booked ? (l.won?'won':'booked') : stageGroup(l.stageName));
+  l.coach = l.coach || '';
+  // factors -> tuples [label,pts,max] (backend sends objects)
+  l.factors = (l.factors||[]).map(f=>Array.isArray(f)?f:[f.label,f.pts,f.max]);
+  return l;
+}
+
+async function loadLeads(){
+  try{
+    const r = await authGet(`?action=list`);
+    if(r.status===401){ authFailed=true; throw new Error('unauthorized'); }
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    if(j.error) throw new Error(j.error);
+    if(!Array.isArray(j.leads) || !j.leads.length) throw new Error('no leads');
+    LIVE=true; loadError=null; authFailed=false; syncedAt=j.syncedAt;
+    LEADS = j.leads.map(normalizeLead);
+  }catch(e){
+    LIVE=false; loadError=String(e.message||e);
+    if(!authFailed) LEADS = DEMO.map(normalizeLead);
+  }
+  if(!activeId && LEADS.length) activeId=LEADS[0].id;
+}
+
+async function refreshStages(){
+  try{
+    const r=await authGet(`?action=pipelines`);
+    if(!r.ok) return;
+    const j=await r.json();
+    const p=(j.pipelines||[]).find(x=>x.id===j.resolvedPipelineId);
+    if(p&&p.stages&&p.stages.length) STAGES=p.stages.map(s=>({id:s.id,name:s.name}));
+  }catch(e){/* keep baked stages */}
+}
+
+/* ---------------- nav ---------------- */
+const VIEWS=[
+ {id:'dashboard',name:'Dashboard',ic:'▦'},
+ {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(l=>l.unread).length},
+ {id:'pipeline',name:'Pipeline',ic:'▤'},
+ {id:'leads',name:'Leads',ic:'☷'},
+ {id:'analytics',name:'Analytics',ic:'📈'},
+ {id:'automations',name:'Automations',ic:'⚡'},
+ {id:'settings',name:'Settings',ic:'⚙'},
+];
+function renderNav(){
+  document.getElementById('nav').innerHTML=
+   `<div class="lbl">Workspace</div>`+
+   VIEWS.map(v=>{const b=v.badge?v.badge():0;
+    return `<div class="navitem ${v.id===cur?'active':''}" onclick="go('${v.id}')">
+      <span class="ic">${v.ic}</span><span>${v.name}</span>${b?`<span class="badge">${b}</span>`:''}</div>`}).join('');
+  renderLiveChip();
+}
+function renderLiveChip(){
+  const w=document.getElementById('livewrap');
+  w.innerHTML = LIVE
+   ? `<div class="livechip"><span class="dot"></span> Live · HighLevel</div>`
+   : `<span class="proto-badge" title="${esc(loadError||'')}">DEMO · backend unreachable</span>`;
+}
+function go(id){cur=id;renderNav();render()}
+
+const TITLES={dashboard:['Dashboard','Your sales command center'],inbox:['Inbox','Every DM, one structured engine'],
+ pipeline:['Pipeline','Drag leads through your funnel'],leads:['Leads','All contacts, scored by AI'],
+ analytics:['Analytics','Where deals leak and win'],automations:['Automations','Your AI on autopilot'],settings:['Settings','Connections & preferences']};
+
+function render(){
+  const [t,s]=TITLES[cur];document.getElementById('ptitle').textContent=t;document.getElementById('psub').textContent=s;
+  const v=document.getElementById('view');v.style.padding=(cur==='inbox'||cur==='pipeline')?'18px 24px':'22px 24px';
+  ({dashboard:vDashboard,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings}[cur])(v);
+}
+
+/* ---------------- score widgets ---------------- */
+function ring(score,size){
+  const r=size/2, col=scColor(score), inner=size-9;
+  return `<div class="ring" style="width:${size}px;height:${size}px;background:conic-gradient(${col} ${score}%, #232a37 0)">
+    <div class="inner" style="width:${inner}px;height:${inner}px"><span class="sc" style="font-size:${size*0.32}px;color:${col}">${score}</span></div></div>`;
+}
+function scpill2(score){const col=scColor(score);return `<span class="scpill" style="background:${STAGEBG_score(score)};color:${col}"><span class="d" style="background:${col}"></span>${score} · ${scLabel(score)}</span>`}
+
+/* ---------------- DASHBOARD ---------------- */
+function vDashboard(v){
+  const hot=[...LEADS].sort((a,b)=>b.score-a.score).slice(0,5);
+  const booked=LEADS.filter(l=>l.group==='booked'||l.booked);
+  const clients=LEADS.filter(l=>l.group==='won');
+  const needs=LEADS.filter(l=>l.needs);
+  const avg=LEADS.length?Math.round(LEADS.reduce((a,b)=>a+b.score,0)/LEADS.length):0;
+  const kpis=[
+   ['Active leads',LEADS.length+'',(LIVE?'live from HighLevel':'demo data'),'flat'],
+   ['Needs reply',needs.length+'',needs.length?'inbound waiting':'all caught up',needs.length?'down':'up'],
+   ['Calls booked',booked.length+'','in scheduled stages','flat'],
+   ['Avg lead score',avg+'','qualified pool','up'],
+   ['Clients',clients.length+'','current athletes','up'],
+  ];
+  v.innerHTML=`
+   <div class="grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
+     ${kpis.map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
+   </div>
+   <div class="grid" style="grid-template-columns:1.3fr 1fr">
+     <div class="panel-card">
+       <div class="ph"><span>🔥</span><h3>Hottest leads</h3><span class="muted" style="margin-left:auto;font-size:11px">by AI score</span></div>
+       ${hot.map(l=>`<div class="lead-line" onclick="openLead('${l.id}')">
+         <div class="ava" style="width:38px;height:38px;font-size:13px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
+         <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(l.name)}</div>
+           <div class="muted" style="font-size:11px;margin-top:1px">${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
+         ${scpill2(l.score)}</div>`).join('')||emptyRow()}
+     </div>
+     <div class="panel-card">
+       <div class="ph"><span>🤖</span><h3>AI insights</h3></div>
+       ${dashInsights()}
+     </div>
+   </div>
+   <div class="panel-card" style="margin-top:16px">
+     <div class="ph"><span>📅</span><h3>Booked &amp; upcoming calls</h3><span class="muted" style="margin-left:auto;font-size:11px">${booked.length} scheduled</span></div>
+     ${booked.slice(0,8).map(l=>`<div class="lead-line" onclick="openLead('${l.id}')">
+       <div class="ava" style="width:36px;height:36px;font-size:12px;background:${avaColor(l.name)}">${initials(l.name)}</div>
+       <div style="flex:1"><div style="font-weight:700;font-size:13px">${esc(l.name)}</div><div class="muted" style="font-size:11px">${esc(l.ans.goal||l.lastMessage||'Strategy call')}</div></div>
+       <span class="stage-chip" style="background:rgba(34,197,94,.15);color:#4ade80">📅 ${esc(l.stageName||'Scheduled')}</span></div>`).join('')||`<div class="muted" style="padding:10px;font-size:12.5px">No booked calls in the current set.</div>`}
+   </div>`;
+}
+function stLabel(g){return {new:'New DM',convo:'In Convo',script:'Script',closer:'Closer',booked:'Booked',won:'Client',nurture:'Follow-up'}[g]||g}
+function emptyRow(){return `<div class="muted" style="padding:14px;font-size:12.5px">No leads loaded.</div>`}
+function dashInsights(){
+  const needs=LEADS.filter(l=>l.needs).length;
+  const hot=[...LEADS].sort((a,b)=>b.score-a.score)[0];
+  const booked=LEADS.filter(l=>l.group==='booked'||l.booked).length;
+  const cold=LEADS.filter(l=>l.score<38).length;
+  const rows=[];
+  if(needs) rows.push(['rgba(245,165,36,.15)','⚠️',`${needs} leads need a reply`,`These DMs have an inbound message waiting on you — answer the warm ones first.`]);
+  if(hot) rows.push(['rgba(34,197,94,.15)','✅',`Hottest: ${esc(hot.name)} (${hot.score})`,esc(hot.coach||'Top of your list — push them today.')]);
+  if(booked) rows.push(['rgba(79,141,253,.15)','📅',`${booked} calls booked`,`Confirm each one and prep a plan so they show up.`]);
+  if(cold && rows.length<3) rows.push(['rgba(248,113,113,.15)','📉',`${cold} cold leads`,`Low intent right now — a re-engage nudge could recover some.`]);
+  return rows.slice(0,3).map(r=>`<div class="insight"><div class="ic" style="background:${r[0]}">${r[1]}</div><div><div class="it">${r[2]}</div><div class="id">${r[3]}</div></div></div>`).join('')||emptyRow();
+}
+
+/* ---------------- INBOX ---------------- */
+function vInbox(v){
+  v.innerHTML=`<div class="inbox">
+    <div class="ilist"><div class="itabs" id="itabs"></div><div class="iconvos" id="iconvos"></div></div>
+    <div class="thread" id="thread"></div>
+    <div class="ictx" id="ictx"></div>
+  </div>`;
+  renderITabs();renderIList();
+  const start = LEADS.find(l=>l.id===activeId)?activeId:(LEADS[0]&&LEADS[0].id);
+  if(start) openConvo(start);
+}
+const ITABS=[['all','All'],['unread','Unread'],['needs','Needs reply'],['booked','Booked']];
+function renderITabs(){document.getElementById('itabs').innerHTML=ITABS.map(t=>`<div class="itab ${t[0]===iTab?'active':''}" onclick="setITab('${t[0]}')">${t[1]}</div>`).join('')}
+function setITab(t){iTab=t;renderIList()}
+function iFiltered(){const q=gq();return LEADS.filter(l=>{
+  if(iTab==='unread'&&!l.unread)return false;if(iTab==='needs'&&!l.needs)return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
+  if(q&&!((l.name+' '+l.loc+' '+l.tags.join(' ')+' '+(l.lastMessage||'')).toLowerCase().includes(q)))return false;return true;})}
+function renderIList(){
+  const wrap=document.getElementById('iconvos');if(!wrap)return;
+  wrap.innerHTML=iFiltered().map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');
+   return `<div class="crow ${l.id===activeId?'active':''}" onclick="openConvo('${l.id}')">
+     <div class="ava" style="width:40px;height:40px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
+     <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px"><span class="nm">${esc(l.name)}</span><span class="tm">${esc(l.time)}</span></div>
+       <div class="snip">${esc(snip)||'<span class="muted">No messages yet</span>'}</div>
+       <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+         <span class="stage-chip" style="background:${STAGEBG_score(l.score)};color:${scColor(l.score)}">${esc(l.stageName||stLabel(l.group))}</span>
+         <span class="scpill" style="font-size:9.5px;padding:1px 7px 1px 5px;color:${scColor(l.score)};background:${STAGEBG_score(l.score)}"><span class="d" style="width:6px;height:6px;background:${scColor(l.score)}"></span>${l.score}</span>
+         ${l.needs?'<span class="stage-chip" style="background:rgba(245,165,36,.15);color:#f7c065">Needs reply</span>':''}
+         ${l.unread?'<span class="unread" style="margin-left:auto"></span>':''}
+       </div></div></div>`}).join('')||`<div class="muted" style="padding:24px;text-align:center;font-size:13px">No conversations</div>`;
+}
+async function openConvo(id){
+  activeId=id;const l=LEADS.find(x=>x.id===id);if(!l)return;
+  l.unread=false;renderNav();renderIList();renderThread(l);renderICtx(l);
+  if(LIVE && !l.msgs){
+    try{
+      const r=await authGet(`?action=messages&contactId=${encodeURIComponent(l.contactId)}`);
+      const j=await r.json();
+      l.msgs=(j.messages||[]).map(m=>({who:m.who,t:m.t,time:fmtTime(m.time),ai:0}));
+    }catch(e){ l.msgs=[]; }
+    if(id===activeId) renderThread(l);
+  }
+}
+function fmtTime(t){ if(!t)return''; try{const d=new Date(t);if(isNaN(d))return String(t);return d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return String(t)} }
+function suggestions(l){
+  if(l.sug&&l.sug.length) return l.sug;
+  const last=(l.lastMessage||'').toLowerCase();
+  if(l.group==='booked'||l.booked) return ["Confirm your time and ask them to send a recent lift video so I can prep.","See you then! Anything you want me to look at before the call?"];
+  if(/price|cost|invest|how much/.test(last)) return ["Great question — easiest to walk you through it on a quick call. Here's my calendar: http://tinyurl.com/strategy-call-coachben","Happy to break it down live so it fits your goals — want to grab a time?"];
+  if(l.needs) return ["Love that — how long have you been competing, and what's your #1 goal right now?","Solid. What's the biggest thing holding your total back at the moment?"];
+  return ["Appreciate you reaching out 💪 what are you training toward right now?","Good question — quick fix incoming. Are you prepping for a meet or building a base?"];
+}
+function renderThread(l){
+  const th=document.getElementById('thread');if(!th)return;
+  let msgsHtml;
+  if(LIVE && l.msgs===undefined) msgsHtml=`<div class="muted" style="margin:auto">Loading conversation…</div>`;
+  else{
+    const msgs=(l.msgs||[]);
+    msgsHtml = msgs.length ? msgs.map(m=>{const who=m.who==='us'?`Coach Ben${m.ai?'<span class="ai-tag">AI</span>':''}`:esc(l.name.split(' ')[0]);
+      const t=esc(m.t).replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank">$1</a>');
+      return `<div class="m ${m.who}"><div class="who">${who}</div><div class="bub">${t}</div><div class="mtime">${esc(m.time||'')}</div></div>`}).join('')
+      : `<div class="muted" style="margin:auto;font-size:12.5px">${l.lastMessage?('Last: '+esc(l.lastMessage)):'No message history available.'}</div>`;
+  }
+  const sug=suggestions(l).map((s,i)=>`<div class="schip" onclick="useSug(${i})" title="${esc(s).replace(/"/g,'&quot;')}">✨ ${esc(s)}</div>`).join('');
+  l._sug=suggestions(l);
+  th.innerHTML=`
+   <div class="t-head">
+     <div class="ava" style="width:40px;height:40px;border-radius:11px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}</div>
+     <div><div style="font-weight:700;font-size:15px">${esc(l.name)}</div><div class="muted" style="font-size:11.5px">${l.plat==='ig'?'Instagram':'Facebook'} · ${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
+     <div style="margin-left:auto;display:flex;gap:8px">
+       <button class="btn sm" onclick="quickBook()">📅 Send booking link</button>
+       <button class="btn sm" onclick="quickTag()">＋ Tag</button>
+     </div>
+   </div>
+   <div class="msgs" id="msgs">${msgsHtml}</div>
+   <div class="composer">
+     <div class="sugg"><span class="lbl">AI suggests:</span>${sug}</div>
+     <div class="cbox"><textarea id="reply" rows="1" placeholder="Message ${esc(l.name.split(' ')[0])}…" oninput="grow(this)"></textarea><button class="send" onclick="sendReply()">➤</button></div>
+   </div>`;
+  const m=document.getElementById('msgs');if(m)m.scrollTop=m.scrollHeight;
+}
+function renderICtx(l){
+  const ctx=document.getElementById('ictx');if(!ctx)return;
+  const ans=(q,a)=>`<div class="answer"><div class="ck ${a?'ok':'no'}">${a?'✓':'?'}</div><div><div class="q">${q}</div><div class="a">${a?esc(a):'<span class="muted">not captured</span>'}</div></div></div>`;
+  const fac=l.factors.map(f=>`<div class="factor"><div class="fr"><span>${esc(f[0])}</span><span class="fp">${f[1]}/${f[2]}</span></div><div class="bar"><i style="width:${f[1]/f[2]*100}%;background:${scColor(l.score)}"></i></div></div>`).join('')||`<div class="muted" style="font-size:12px">No score breakdown.</div>`;
+  ctx.innerHTML=`
+   <div class="sec" style="text-align:center;border-bottom:none;padding-bottom:6px">
+     ${ring(l.score,84)}
+     <div style="font-weight:800;font-size:16px;margin-top:10px">${scLabel(l.score)} lead</div>
+     <div class="muted" style="font-size:11.5px">AI lead score</div>
+   </div>
+   ${l.coach?`<div class="sec"><div class="coach"><div class="h">🤖 AI coaching</div>${esc(l.coach)}</div></div>`:''}
+   <div class="sec"><h4>Score breakdown</h4>${fac}</div>
+   ${(l.group==='booked'||l.booked)?`<div class="sec"><h4>Pipeline stage</h4><div class="coach" style="background:linear-gradient(135deg,rgba(34,197,94,.12),rgba(34,197,94,.04));border-color:rgba(34,197,94,.3)"><div class="h" style="color:#9be8c0">📅 ${esc(l.stageName||'Scheduled')}</div>Confirm the call and prep their plan.</div></div>`:''}
+   <div class="sec"><h4>Collected by AI</h4>${ans('Age &amp; location',l.ans.age?`${l.ans.age} · ${l.ans.loc||''}`:(l.ans.loc||null))}${ans('Current blocker',l.ans.blocker)}${ans('#1 goal',l.ans.goal)}</div>
+   <div class="sec" style="border-bottom:none"><h4>Tags</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${l.tags.map(t=>`<span class="ctag">${esc(t)}</span>`).join('')||'<span class="muted" style="font-size:12px">No tags</span>'}</div></div>`;
+}
+function curLead(){return LEADS.find(l=>l.id===activeId)}
+function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
+function useSug(i){const l=curLead();const r=document.getElementById('reply');r.value=(l._sug||suggestions(l))[i];grow(r);r.focus()}
+async function sendReply(){
+  const r=document.getElementById('reply');const val=r.value.trim();if(!val)return;
+  const l=curLead();
+  l.msgs=l.msgs||[];l.msgs.push({who:'us',ai:0,t:val,time:'Just now'});
+  l.needs=false;l.lastMessage=val;l.lastDir='outbound';
+  r.value='';grow(r);renderThread(l);renderIList();
+  if(LIVE){
+    try{const res=await post({action:'send',contactId:l.contactId,channel:l.plat==='fb'?'FB':'IG',message:val});
+      if(res&&res.ok!==false) toast('Reply sent · '+l.name); else toastErr('Send failed · '+l.name);}
+    catch(e){toastErr('Send failed · '+l.name);}
+  } else toast('Reply queued · '+l.name+' (demo)');
+}
+const BOOK_MSGS=["Awesome, here is my calendar. http://tinyurl.com/strategy-call-coachben",
+ "Go ahead and book in now! Spots usually fill quick. Once you're done just let me know what time you picked, cool?"];
+async function quickBook(){
+  const l=curLead();l.msgs=l.msgs||[];BOOK_MSGS.forEach(t=>l.msgs.push({who:'us',ai:1,t,time:'Just now'}));
+  l.needs=false;l.lastMessage=BOOK_MSGS[0];l.lastDir='outbound';
+  renderThread(l);renderIList();
+  if(LIVE){
+    try{ for(const t of BOOK_MSGS){ await post({action:'send',contactId:l.contactId,channel:l.plat==='fb'?'FB':'IG',message:t}); }
+      toast('Booking link sent · '+l.name);}
+    catch(e){toastErr('Send failed · '+l.name);}
+  } else toast('Booking link sent · '+l.name+' (demo)');
+}
+async function quickTag(){
+  const l=curLead();const tag='closer';
+  if(!l.tags.includes(tag)) l.tags.push(tag);
+  renderICtx(l);
+  if(LIVE){ try{await post({action:'tag',contactId:l.contactId,tag});toast('Tag added · '+l.name);}catch(e){toastErr('Tag failed');} }
+  else toast('Tag added · '+l.name+' (demo)');
+}
+
+/* ---------------- PIPELINE ---------------- */
+function pipelineColumns(){
+  if(LIVE) return STAGES.map((s,i)=>({key:s.id,name:s.name,color:stageColorByIndex(i),stageId:s.id,match:l=>l.stageId===s.id}));
+  const order=[['new','New DM','var(--new)'],['convo','In Convo','var(--convo)'],['script','Script','var(--script)'],['closer','Closer','var(--closer)'],['booked','Booked','var(--booked)'],['won','Client','var(--won)']];
+  return order.map(g=>({key:g[0],name:g[1],color:g[2],stageId:null,match:l=>l.group===g[0]}));
+}
+function vPipeline(v){
+  const cols=pipelineColumns();const q=gq();
+  v.innerHTML=`<div class="board" id="board" style="height:calc(100vh - 150px)"></div>`;
+  const board=document.getElementById('board');
+  cols.forEach(cdef=>{
+    const col=document.createElement('div');col.className='col';col.style.setProperty('--c',cdef.color);
+    const inSt=LEADS.filter(l=>cdef.match(l) && (!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q))));
+    col.innerHTML=`<div class="col-head"><div class="col-title"><span class="cdot"></span><h3>${esc(cdef.name)}</h3><span class="count">${inSt.length}</span></div></div><div class="cards"></div>`;
+    const cards=col.querySelector('.cards');
+    inSt.sort((a,b)=>b.score-a.score).forEach(l=>cards.appendChild(kcard(l)));
+    cards.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('dragover')});
+    cards.addEventListener('dragleave',()=>col.classList.remove('dragover'));
+    cards.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('dragover');
+      const id=e.dataTransfer.getData('id');const l=LEADS.find(x=>x.id===id);if(!l)return;
+      moveLeadToColumn(l,cdef);});
+    board.appendChild(col);
+  });
+}
+async function moveLeadToColumn(l,cdef){
+  const fromName=l.stageName||stLabel(l.group);
+  if(cdef.stageId){
+    if(l.stageId===cdef.stageId)return;
+    l.stageId=cdef.stageId;l.stageName=cdef.name;l.group=stageGroup(cdef.name);l.booked=l.group==='booked'||l.group==='won';
+  }else{ if(l.group===cdef.key)return; l.group=cdef.key; }
+  render();
+  if(LIVE && l.opportunityId && cdef.stageId){
+    try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:cdef.stageId});
+      if(res&&res.ok!==false) toast(`${l.name}: ${fromName} → ${cdef.name}`); else toastErr(`Move failed · ${l.name}`);}
+    catch(e){toastErr(`Move failed · ${l.name}`);}
+  } else if(LIVE && !l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
+  else { toast(`${l.name}: ${fromName} → ${cdef.name} (demo)`); }
+}
+function kcard(l){
+  const c=document.createElement('div');c.className='kcard';c.draggable=true;
+  c.innerHTML=`<div class="top"><div class="ava" style="width:34px;height:34px;font-size:12px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
+     <div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="hd">${esc(l.loc)} · ${esc(l.time)}</div></div>
+     ${scpill2(l.score)}</div>
+   <div class="snip">${esc(l.lastMessage)||'<span class="muted">No messages</span>'}</div>
+   <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
+  c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging')});
+  c.addEventListener('dragend',()=>c.classList.remove('dragging'));
+  c.addEventListener('click',()=>openLead(l.id));
+  return c;
+}
+
+/* ---------------- LEADS table ---------------- */
+function vLeads(v){
+  const q=gq();
+  let rows=LEADS.filter(l=>!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q)));
+  rows.sort((a,b)=> leadSort==='score'?b.score-a.score : leadSort==='name'?a.name.localeCompare(b.name) : 0);
+  v.innerHTML=`<div class="panel-card" style="padding:6px 6px 4px">
+   <table><thead><tr>
+     <th onclick="setSort('name')">Lead</th><th>Platform</th><th>Stage</th>
+     <th onclick="setSort('score')">AI Score ▾</th><th>Last message</th><th>Last activity</th><th>Tags</th>
+   </tr></thead><tbody>
+   ${rows.map(l=>`<tr class="lrow" onclick="openLead('${l.id}')">
+     <td><div style="display:flex;align-items:center;gap:10px"><div class="ava" style="width:34px;height:34px;font-size:12px;background:${avaColor(l.name)}">${initials(l.name)}</div>
+       <div><div style="font-weight:700">${esc(l.name)}</div><div class="muted" style="font-size:11px">${esc(l.loc)}</div></div></div></td>
+     <td>${l.plat==='ig'?'📷 Instagram':'📘 Facebook'}</td>
+     <td><span class="stage-chip" style="background:${STAGEBG_score(l.score)};color:${scColor(l.score)}">${esc(l.stageName||stLabel(l.group))}</span></td>
+     <td><div style="display:flex;align-items:center;gap:9px"><b style="color:${scColor(l.score)};width:24px">${l.score}</b><div class="bar"><i style="width:${l.score}%;background:${scColor(l.score)}"></i></div></div></td>
+     <td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.lastMessage)||'—'}</td>
+     <td class="muted">${esc(l.time)}</td>
+     <td>${l.tags.slice(0,2).map(t=>`<span class="ctag" style="font-size:10px">${esc(t)}</span>`).join(' ')||'—'}</td>
+   </tr>`).join('')}
+   </tbody></table></div>`;
+}
+function setSort(s){leadSort=s;render()}
+
+/* ---------------- ANALYTICS ---------------- */
+function vAnalytics(v){
+  const total=LEADS.length||1;
+  const replied=LEADS.filter(l=>l.lastDir==='inbound'||l.needs).length;
+  const scriptp=LEADS.filter(l=>['script','closer','booked','won'].includes(l.group)).length;
+  const closer=LEADS.filter(l=>['closer','booked','won'].includes(l.group)).length;
+  const booked=LEADS.filter(l=>l.group==='booked'||l.booked).length;
+  const won=LEADS.filter(l=>l.group==='won').length;
+  const funnel=[['In set',total],['Replied',replied],['Script+',scriptp],['With closer',closer],['Calls booked',booked],['Clients',won]];
+  const max=total;
+  const dist=[['Hot (80+)',LEADS.filter(l=>l.score>=80).length,'var(--hot)'],['Warm (58-79)',LEADS.filter(l=>l.score>=58&&l.score<80).length,'var(--warm)'],
+    ['Cool (38-57)',LEADS.filter(l=>l.score>=38&&l.score<58).length,'var(--cool)'],['Cold (<38)',LEADS.filter(l=>l.score<38).length,'var(--cold)']];
+  const dmax=Math.max(...dist.map(d=>d[1]),1);
+  const ig=LEADS.filter(l=>l.plat==='ig').length, fb=LEADS.filter(l=>l.plat==='fb').length;
+  v.innerHTML=`
+   <div class="grid" style="grid-template-columns:1.4fr 1fr">
+     <div class="panel-card">
+       <div class="ph"><span>🔻</span><h3>Conversion funnel${LIVE?' — live':''}</h3></div>
+       <div class="funnel">${funnel.map(f=>`<div class="frow"><div class="fl">${f[0]}</div>
+         <div class="ftrack"><i style="width:${Math.max(f[1]/max*100,6)}%">${f[1]}</i></div><div class="fpct">${Math.round(f[1]/max*100)}%</div></div>`).join('')}</div>
+       <div class="insight" style="margin-top:14px"><div class="ic" style="background:rgba(248,113,113,.15)">⚠️</div><div><div class="it">Biggest leak: reply → script</div><div class="id">Get more replies into the qualifying script — that is where the funnel widens.</div></div></div>
+     </div>
+     <div class="panel-card">
+       <div class="ph"><span>🎯</span><h3>Lead score distribution</h3></div>
+       ${dist.map(d=>`<div class="factor"><div class="fr"><span>${d[0]}</span><span class="fp">${d[1]}</span></div><div class="bar" style="width:100%"><i style="width:${d[1]/dmax*100}%;background:${d[2]}"></i></div></div>`).join('')}
+       <div class="ph" style="margin-top:18px"><span>📊</span><h3>Channel split</h3></div>
+       <div class="kv"><span class="k">📷 Instagram</span><span class="v">${ig} · ${Math.round(ig/total*100)}%</span></div>
+       <div class="kv"><span class="k">📘 Facebook</span><span class="v">${fb} · ${Math.round(fb/total*100)}%</span></div>
+     </div>
+   </div>
+   <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
+     ${[['Reply rate',Math.round(replied/total*100)+'%','of current set','flat'],['Reply → booked',replied?Math.round(booked/replied*100)+'%':'0%','of responders','flat'],['Booked → client',booked?Math.round(won/booked*100)+'%':'0%','show + close','flat'],['Avg score',LEADS.length?Math.round(LEADS.reduce((a,b)=>a+b.score,0)/LEADS.length):0,'qualified pool','flat']]
+       .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
+   </div>`;
+}
+
+/* ---------------- AUTOMATIONS ---------------- */
+function vAutomations(v){
+  const closerN=LEADS.filter(l=>l.group==='closer').length;
+  v.innerHTML=`
+   <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+     <div class="panel-card">
+       <div class="ph"><span>🤖</span><h3>DM Closer · Autopilot</h3><span class="livechip" style="margin-left:auto">● Live</span></div>
+       <p class="muted" style="font-size:12.5px;line-height:1.6">Qualifies, handles objections, and books calls automatically once a lead is tagged <b style="color:var(--text)">closer</b>. Currently <b style="color:var(--text)">${closerN} in the Closer stage</b>.</p>
+       <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+         ${['Age & location check','Under-18 / India → Foundations','Current blocker','Primary goal','Offer the call','Send booking link','Confirm or follow up'].map((s,i)=>`<div style="display:flex;align-items:center;gap:10px;font-size:12.5px"><span style="width:20px;height:20px;border-radius:50%;background:rgba(34,197,94,.15);color:#4ade80;display:grid;place-items:center;font-size:10px;font-weight:900">${i+1}</span>${s}</div>`).join('')}
+       </div>
+     </div>
+     <div class="panel-card">
+       <div class="ph"><span>⏱️</span><h3>Follow-up sequences</h3></div>
+       ${[['30 Day Follow Up','automated re-engage','On','#4ade80'],['60 Day Follow Up','automated re-engage','On','#4ade80'],['90 Day Follow Up','automated re-engage','On','#4ade80'],['6 Month Follow Up','long-term nurture','On','#4ade80'],['No-show recovery','rebook missed calls','On','#4ade80']]
+        .map(s=>`<div class="insight"><div class="ic" style="background:rgba(34,197,94,.15)">⏱️</div>
+          <div style="flex:1"><div class="it">${s[0]}</div><div class="id">${s[1]}</div></div>
+          <span class="stage-chip" style="align-self:center;background:rgba(34,197,94,.15);color:${s[3]}">${s[2]}</span></div>`).join('')}
+       <div class="insight" style="border-style:dashed"><div class="ic" style="background:rgba(79,141,253,.15)">🔁</div><div><div class="it">Jake run · every 30 min</div><div class="id">Works new DMs, warms leads, and transitions stages in HighLevel — the CRM reflects it automatically.</div></div></div>
+     </div>
+   </div>`;
+}
+
+/* ---------------- SETTINGS ---------------- */
+function vSettings(v){
+  v.innerHTML=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+    <div class="panel-card"><div class="ph"><span>🔌</span><h3>Connections</h3></div>
+      ${[['HighLevel',(LIVE?'Connected · live sync':'Unreachable — using demo data'),(LIVE?'Connected':'Offline'),(LIVE?'#4ade80':'#f87171')],['DM Pipeline','Auto-resolved · '+STAGES.length+' stages','Mapped','#4ade80'],['Instagram','@bigbenchas · DMs','Active','#4ade80'],['Appointwise','DM Closer AI','Active','#4ade80'],['Supabase Realtime','Instant webhook updates',(LIVE?'On':'Off'),(LIVE?'#4ade80':'#7A8699')]]
+        .map(c=>`<div class="insight"><div class="ic" style="background:rgba(34,197,94,.12)">🔗</div><div style="flex:1"><div class="it">${c[0]}</div><div class="id">${c[1]}</div></div><span class="stage-chip" style="align-self:center;background:rgba(34,197,94,.15);color:${c[3]}">● ${c[2]}</span></div>`).join('')}
+      <div class="kv" style="margin-top:8px"><span class="k">Backend</span><span class="v" style="font-size:11px">${esc(CONFIG.fnUrl)}</span></div>
+      ${syncedAt?`<div class="kv"><span class="k">Last synced</span><span class="v">${fmtTime(syncedAt)}</span></div>`:''}
+      <button class="btn sm" style="margin-top:10px" onclick="manualRefresh()">↻ Refresh now</button>
+      <button class="btn sm" style="margin-top:10px;margin-left:8px" onclick="logout()">⎋ Sign out</button>
+    </div>
+    <div class="panel-card"><div class="ph"><span>🎯</span><h3>Lead scoring weights</h3></div>
+      <p class="muted" style="font-size:12.5px;line-height:1.6;margin-bottom:12px">How the AI weighs each lead. (Tuning these live is on the roadmap — scoring currently runs in the backend.)</p>
+      ${[['Intent signals',30],['Qualification completeness',25],['Engagement',25],['Fit (sport, goal, region)',20]].map(w=>`<div class="factor"><div class="fr"><span>${w[0]}</span><span class="fp">${w[1]}%</span></div><div class="bar" style="width:100%"><i style="width:${w[1]/30*100}%;background:var(--accent)"></i></div></div>`).join('')}
+      <div class="kv" style="margin-top:10px"><span class="k">Hot threshold</span><span class="v">80+</span></div>
+      <div class="kv"><span class="k">Auto-route region</span><span class="v">India → Foundations</span></div>
+      <div class="kv"><span class="k">Booked stages</span><span class="v">→ score boost</span></div>
+    </div></div>`;
+}
+async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Still using demo data'); }
+
+/* ---------------- realtime ---------------- */
+let rtTimer=null;
+function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(cur==='inbox')renderIList();else render();renderNav();},900);}
+async function startRealtime(){
+  if(!LIVE)return;
+  try{
+    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const sb=createClient(CONFIG.supabaseUrl,CONFIG.anonKey);
+    sb.channel('crm')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'events'},refreshSoon)
+      .on('postgres_changes',{event:'*',schema:'public',table:'leads_cache'},refreshSoon)
+      .subscribe();
+  }catch(e){/* polling covers it */}
+}
+
+/* ---------------- shared ---------------- */
+function openLead(id){go('inbox');setTimeout(()=>openConvo(id),0)}
+function gq(){return (document.getElementById('gsearch').value||'').toLowerCase()}
+function toast(msg){const t=document.createElement('div');t.className='toast';
+  t.innerHTML=`<span class="tdot">✓</span><span>${esc(msg)} &nbsp;·&nbsp; <span style="color:#7fe0a5">${LIVE?'synced to HighLevel':'demo'}</span></span>`;
+  document.getElementById('toasts').appendChild(t);setTimeout(()=>t.remove(),2900)}
+function toastErr(msg){const t=document.createElement('div');t.className='toast err';
+  t.innerHTML=`<span class="tdot" style="background:#f87171">!</span><span>${esc(msg)}</span>`;
+  document.getElementById('toasts').appendChild(t);setTimeout(()=>t.remove(),3400)}
+document.getElementById('gsearch').addEventListener('input',()=>{if(['inbox','pipeline','leads'].includes(cur))render()});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&document.activeElement?.id==='reply'){e.preventDefault();sendReply()}});
+
+/* ---------------- login gate ---------------- */
+function showLogin(msg){
+  const o=document.createElement('div');o.id='loginScreen';
+  o.style.cssText='position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:radial-gradient(900px 500px at 30% 0%,rgba(79,141,253,.12),transparent 60%),var(--bg)';
+  o.innerHTML=`<div style="width:340px;max-width:90vw;text-align:center">
+    <div class="logo" style="width:54px;height:54px;border-radius:15px;font-size:22px;margin:0 auto 16px">BB</div>
+    <h1 style="font-size:20px;font-weight:800">Big Benchas CRM</h1>
+    <div class="muted" style="font-size:12.5px;margin:6px 0 20px">Enter your team passcode to continue</div>
+    ${msg?`<div style="color:#f87171;font-size:12px;margin-bottom:10px">${esc(msg)}</div>`:''}
+    <input id="pwd" class="inp" type="password" placeholder="Passcode" style="text-align:center;padding:12px" autofocus>
+    <button class="btn primary" style="width:100%;justify-content:center;margin-top:12px;padding:12px" onclick="doLogin()">Unlock CRM</button>
+  </div>`;
+  document.body.appendChild(o);
+  const inp=o.querySelector('#pwd');inp.focus();
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+}
+async function doLogin(){
+  const inp=document.getElementById('pwd');const val=(inp.value||'').trim();if(!val)return;
+  APP_KEY=val; authFailed=false;
+  const r=await authGet('?action=list').catch(()=>({status:0}));
+  if(r.status===401){ APP_KEY=''; const s=document.getElementById('loginScreen'); if(s)s.remove(); showLogin('Wrong passcode — try again'); return; }
+  localStorage.setItem('bb_crm_key',APP_KEY);
+  const s=document.getElementById('loginScreen'); if(s)s.remove();
+  boot();
+}
+function logout(){ localStorage.removeItem('bb_crm_key'); APP_KEY=''; location.reload(); }
+
+/* ---------------- boot ---------------- */
+async function boot(){
+  if(!APP_KEY){ showLogin(); return; }
+  renderNav();
+  document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
+  await Promise.all([loadLeads(), refreshStages()]);
+  if(authFailed){ logout(); return; }
+  renderNav();render();startRealtime();
+  setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else render();renderNav();},CONFIG.refreshMs);
+}
+boot();
+</script>
+</body>
+</html>

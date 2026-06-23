@@ -827,9 +827,27 @@ async function sendJake(){
   }catch(e){ jakeBusy=false; jakeMsgs.push({role:'assistant',content:'Network error reaching Jake — try again.'}); renderJake(); }
 }
 
-/* ---------------- realtime ---------------- */
-let rtTimer=null, rtOn=false;
-function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else if(cur!=='jake')render();renderNav();},700);}
+/* ---------------- background refresh (quiet) ---------------- */
+let rtTimer=null, rtOn=false, lastSig='';
+// Cheap signature of what's actually visible — so a background refresh only redraws
+// when something really changed (stage, score, new message, unread), never on a no-op.
+function leadsSig(){ let s=LEADS.length+'|'; for(const l of LEADS) s+=l.id+(l.stageId||'')+l.score+l.lastMs+(l.unread?'1':'0')+(l.needs?'1':'0')+';'; return s; }
+// Apply fresh data WITHOUT knocking the user off: skip redraw if nothing changed,
+// and preserve scroll position (vertical + the pipeline's horizontal scroll) when it does.
+function applyRefresh(){
+  renderNav();
+  const sig=leadsSig();
+  if(sig===lastSig) return;                 // no change → leave the view exactly as-is
+  lastSig=sig;
+  if(cur==='jake'||cur==='settings'||cur==='automations') return; // never auto-redraw these
+  if(cur==='inbox'){ renderIList(); return; }                     // keeps the open thread
+  const v=document.getElementById('view'); const top=v?v.scrollTop:0;
+  const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0;
+  render();
+  const v2=document.getElementById('view'); if(v2)v2.scrollTop=top;
+  const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left;
+}
+function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}applyRefresh();},700);}
 async function startRealtime(){
   if(!LIVE)return;
   try{
@@ -887,8 +905,9 @@ async function boot(){
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
   await Promise.all([loadLeads(), refreshStages()]);
   if(authFailed){ logout(); return; }
-  renderNav();render();startRealtime();
-  setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else if(cur!=='jake')render();renderNav();},CONFIG.refreshMs);
+  renderNav();render();lastSig=leadsSig();startRealtime();
+  clearInterval(window.__pollTimer);   // never stack timers across re-logins
+  window.__pollTimer=setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

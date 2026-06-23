@@ -227,7 +227,7 @@ const CONFIG = {
   fnUrl:       "https://kujrcdkswpjrjmnmciai.functions.supabase.co/hl",
   supabaseUrl: "https://kujrcdkswpjrjmnmciai.supabase.co",
   anonKey:     "sb_publishable_LO0Znh4ZhwOMzAO8rjAhZw_BieIrkjF",
-  refreshMs:   20000,
+  refreshMs:   45000,
 };
 
 /* The "DM's" pipeline stages (from ?action=pipelines). Refreshed live on boot. */
@@ -271,7 +271,7 @@ const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&g
    unreachable it surfaces an honest error state instead of any sample people. */
 
 /* ---------------- state ---------------- */
-let LEADS=[], LIVE=false, syncedAt=null, loadError=null, authFailed=false;
+let LEADS=[], LIVE=false, syncedAt=null, loadError=null, authFailed=false, everLoaded=false;
 let cur='dashboard', activeId=null, iTab='all', leadSort='score';
 let APP_KEY = localStorage.getItem('bb_crm_key') || '';
 
@@ -307,11 +307,18 @@ async function loadLeads(){
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     if(j.error) throw new Error(j.error);
+    const fresh = (j.leads||[]).map(normalizeLead);
+    // Only replace what's on screen if the refresh actually returned leads (or it's
+    // the very first load). A transient empty/slow response from HighLevel must NOT
+    // blank an already-populated board.
+    if(fresh.length || !everLoaded) LEADS = fresh;
+    if(fresh.length) everLoaded = true;
     LIVE=true; loadError=null; authFailed=false; syncedAt=j.syncedAt;
-    LEADS = (j.leads||[]).map(normalizeLead);  // live HighLevel data only
   }catch(e){
-    LIVE=false; loadError=String(e.message||e);
-    LEADS=[];  // never fall back to fake people
+    loadError=String(e.message||e);
+    if(authFailed){ LEADS=[]; return; }            // bad passcode → clear & re-login
+    if(!everLoaded){ LIVE=false; LEADS=[]; }        // initial failure → honest empty state
+    // otherwise: transient refresh hiccup → keep the leads already on screen, no flicker
   }
   if(!activeId && LEADS.length) activeId=LEADS[0].id;
 }

@@ -258,48 +258,8 @@ function scColor(score){return `var(--${sc(score)})`}
 function scLabel(score){return {hot:'Hot',warm:'Warm',cool:'Cool',cold:'Cold'}[sc(score)]}
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-/* ---------------- demo fallback (used only if backend unreachable) ---------------- */
-const DEMO=[
-{name:'José',plat:'ig',loc:'México',yrs:'4 yrs',group:'booked',unread:false,needs:false,time:'9h',booked:true,score:92,
- coach:'Fully bought in and booked. Confirm the call and have his 150kg bench plan ready — this one closes.',
- factors:[['Intent signals',28,30],['Qualification',25,25],['Engagement',22,25],['Fit',17,20]],
- ans:{age:'37',loc:'México',blocker:'Bench stalled at 130kg',goal:'150kg bench this year'},tags:['Strategy Call','closer'],
- lastMessage:"booked for Tuesday 3pm 💪",
- sug:['Confirm Tuesday 3pm and ask him to send his last bench video.','Love it José — see you Tuesday. Anything you want me to look at before the call?'],
- msgs:[{who:'us',ai:1,t:"Perfect, before we go deeper, how old are you and what country are you based in?",time:'Mon 2:09 PM'},
-  {who:'them',t:"37 years, México",time:'Mon 9:02 PM'},
-  {who:'us',ai:1,t:"Awesome, here is my calendar. http://tinyurl.com/strategy-call-coachben",time:'Tue 9:17 AM'},
-  {who:'them',t:"booked for Tuesday 3pm 💪",time:'Tue 11:40 AM'}]},
-{name:'Devon Pratt',plat:'fb',loc:'USA',yrs:'7 yrs',group:'closer',unread:true,needs:true,time:'2h',booked:false,score:88,
- coach:'Asked about price — that is a peak buying signal. Do not over-explain. Drop the booking link now.',
- factors:[['Intent signals',27,30],['Qualification',22,25],['Engagement',21,25],['Fit',18,20]],
- ans:{age:'31',loc:'USA',blocker:'No structure, winging programming',goal:'1500 total'},tags:['hot','closer'],
- lastMessage:"sounds good, what's the investment look like?",
- sug:['Great question — happy to walk you through it on a quick call. Here is my calendar: http://tinyurl.com/strategy-call-coachben'],
- msgs:[{who:'them',t:"sounds good, what's the investment look like?",time:'Today 11:58 AM'}]},
-{name:'Marcus Hill',plat:'ig',loc:'USA',yrs:'3 yrs',group:'convo',unread:false,needs:false,time:'7h',booked:false,score:70,
- coach:'Meet in 12 weeks = urgency. Move him to qualify fast — time pressure is your friend.',
- factors:[['Intent signals',18,30],['Qualification',16,25],['Engagement',19,25],['Fit',17,20]],
- ans:{age:null,loc:'USA',blocker:null,goal:'Total elite at meet in 12wk'},tags:['meet 12wk'],
- lastMessage:"about 3 years now",
- sug:['12 weeks is the perfect window to dial it in. What are you opening with on each lift?'],
- msgs:[{who:'them',t:"got a meet in 12 weeks, trying to total elite",time:'Today 7:02 AM'},
-  {who:'them',t:"about 3 years now",time:'Today 7:20 AM'}]},
-{name:'Tommy Bowman',plat:'ig',loc:'USA',yrs:'—',group:'convo',unread:true,needs:true,time:'1h',booked:false,score:42,
- coach:'Technique question, not yet a prospect. Give value, then pivot: how long have you been competing?',
- factors:[['Intent signals',8,30],['Qualification',5,25],['Engagement',13,25],['Fit',16,20]],
- ans:{age:null,loc:null,blocker:null,goal:null},tags:['comment lead'],
- lastMessage:"how do I fix my setup?",
- sug:['Flared elbows are usually the culprit — tuck to ~45° on the way down. How long have you been benching?'],
- msgs:[{who:'them',t:"I used to bench with my elbows really flared. how do I fix my setup?",time:'Today 1:12 PM'}]},
-{name:'Vimal',plat:'ig',loc:'India',yrs:'6 yrs',group:'closer',unread:false,needs:false,time:'1d',booked:false,score:21,
- coach:'India + budget tight = outside the call funnel. Route to the Foundations resource, do not push a call.',
- factors:[['Intent signals',7,30],['Qualification',9,25],['Engagement',8,25],['Fit',2,20]],
- ans:{age:null,loc:'India',blocker:'Budget',goal:null},tags:['Foundations'],
- lastMessage:"India, and budget is a bit tight right now",
- sug:['Totally understand. Here is a free resource to get you started: the Bench Blueprint 💪'],
- msgs:[{who:'them',t:"India, and budget is a bit tight right now",time:'Yest 3:22 PM'}]},
-];
+/* No demo data — this CRM shows ONLY live HighLevel data. If the backend is
+   unreachable it surfaces an honest error state instead of any sample people. */
 
 /* ---------------- state ---------------- */
 let LEADS=[], LIVE=false, syncedAt=null, loadError=null, authFailed=false;
@@ -338,12 +298,11 @@ async function loadLeads(){
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     if(j.error) throw new Error(j.error);
-    if(!Array.isArray(j.leads) || !j.leads.length) throw new Error('no leads');
     LIVE=true; loadError=null; authFailed=false; syncedAt=j.syncedAt;
-    LEADS = j.leads.map(normalizeLead);
+    LEADS = (j.leads||[]).map(normalizeLead);  // live HighLevel data only
   }catch(e){
     LIVE=false; loadError=String(e.message||e);
-    if(!authFailed) LEADS = DEMO.map(normalizeLead);
+    LEADS=[];  // never fall back to fake people
   }
   if(!activeId && LEADS.length) activeId=LEADS[0].id;
 }
@@ -380,7 +339,7 @@ function renderLiveChip(){
   const w=document.getElementById('livewrap');if(!w)return;
   w.innerHTML = LIVE
    ? `<div class="livechip"><span class="dot"></span> Live · HighLevel${rtOn?' · realtime':''}</div>`
-   : `<span class="proto-badge" title="${esc(loadError||'')}">DEMO · backend unreachable</span>`;
+   : `<span class="proto-badge" title="${esc(loadError||'')}">⚠ HighLevel unreachable</span>`;
 }
 function go(id){cur=id;renderNav();render()}
 
@@ -391,6 +350,17 @@ const TITLES={dashboard:['Dashboard','Your sales command center'],inbox:['Inbox'
 function render(){
   const [t,s]=TITLES[cur];document.getElementById('ptitle').textContent=t;document.getElementById('psub').textContent=s;
   const v=document.getElementById('view');v.style.padding=(cur==='inbox'||cur==='pipeline')?'18px 24px':'22px 24px';
+  // Honest error state — never render fake data when HighLevel is unreachable.
+  if(!LIVE && !LEADS.length && cur!=='settings'){
+    v.style.padding='22px 24px';
+    v.innerHTML=`<div class="panel-card" style="max-width:520px;margin:40px auto;text-align:center">
+      <div style="font-size:30px;margin-bottom:8px">📡</div>
+      <h3 style="font-size:16px">Couldn't reach HighLevel</h3>
+      <div class="muted" style="font-size:12.5px;margin:8px 0 14px;line-height:1.5">No data was loaded, so nothing is shown (this CRM never displays sample data).<br><span style="font-size:11px">${esc(loadError||'')}</span></div>
+      <button class="btn primary" onclick="manualRefresh()">↻ Retry</button>
+    </div>`;
+    return;
+  }
   ({dashboard:vDashboard,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings}[cur])(v);
 }
 

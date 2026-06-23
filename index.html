@@ -184,6 +184,15 @@
   .switch i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
   .switch.on i{left:18px}
   .inp{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:8px 11px;color:var(--text);font-size:12.5px;font-family:var(--font);width:100%;outline:none}
+  /* lead action menu (pipeline click) */
+  .lm-back{position:fixed;inset:0;z-index:120;background:rgba(5,8,13,.62);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
+  .lm-card{width:430px;max-width:94vw;background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:var(--shadow);animation:pop .18s ease}
+  .lm-x{margin-left:auto;background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:4px 6px;border-radius:8px}
+  .lm-x:hover{background:var(--panel2);color:var(--text)}
+  .lm-stages{display:flex;flex-wrap:wrap;gap:7px}
+  .lm-stage{font-size:12px;font-weight:600;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:7px 11px;cursor:pointer;transition:.12s;font-family:var(--font)}
+  .lm-stage:hover{background:var(--accent);border-color:transparent;color:#fff}
+  .lm-stage.cur{background:var(--panel2);color:var(--muted2);cursor:default;border-style:dashed}
   @media(max-width:1150px){.ictx{display:none}}
 </style>
 </head>
@@ -607,8 +616,52 @@ function kcard(l){
    <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
   c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging')});
   c.addEventListener('dragend',()=>c.classList.remove('dragging'));
-  c.addEventListener('click',()=>openLead(l.id));
+  c.addEventListener('click',()=>openLeadMenu(l.id));
   return c;
+}
+
+/* ---------------- lead action menu (click a card) ---------------- */
+let lmId=null, lmConfirm=false;
+function openLeadMenu(id){ lmId=id; lmConfirm=false; renderLeadMenu(); }
+function closeLeadMenu(){ lmId=null; lmConfirm=false; const b=document.getElementById('lmBack'); if(b)b.remove(); }
+function renderLeadMenu(){
+  const l=LEADS.find(x=>x.id===lmId); if(!l){closeLeadMenu();return;}
+  let b=document.getElementById('lmBack');
+  if(!b){ b=document.createElement('div'); b.id='lmBack'; b.className='lm-back'; b.addEventListener('click',e=>{if(e.target===b)closeLeadMenu();}); document.body.appendChild(b); }
+  const stageBtns=STAGES.map(s=>`<button class="lm-stage ${s.id===l.stageId?'cur':''}" ${s.id===l.stageId?'disabled':''} onclick="jumpStage('${l.id}','${s.id}')">${esc(s.name)}</button>`).join('');
+  b.innerHTML=`<div class="lm-card" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      <div class="ava" style="width:44px;height:44px;border-radius:12px;font-size:15px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.name)}</div><div class="muted" style="font-size:11.5px">${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
+      ${scpill2(l.score)}
+      <button class="lm-x" onclick="closeLeadMenu()">✕</button>
+    </div>
+    <div class="sec" style="border:none;padding:10px 0 4px"><h4>Move to stage</h4><div class="lm-stages">${stageBtns}</div></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
+      ${lmConfirm
+        ? `<button class="btn" style="flex:1;justify-content:center;background:#b91c1c;border-color:#b91c1c;color:#fff" onclick="removeLead('${l.id}')">Confirm remove</button>`
+        : `<button class="btn" style="flex:1;justify-content:center;color:#f87171;border-color:rgba(248,113,113,.35)" onclick="lmConfirm=true;renderLeadMenu()">🗑 Remove from pipeline</button>`}
+    </div>
+    ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept.</div>`:''}
+  </div>`;
+}
+async function jumpStage(id,stageId){
+  const l=LEADS.find(x=>x.id===id); const s=STAGES.find(x=>x.id===stageId); if(!l||!s)return;
+  const from=l.stageName||stLabel(l.group);
+  l.stageId=s.id; l.stageName=s.name; l.group=stageGroup(s.name); l.booked=l.group==='booked'||l.group==='won';
+  closeLeadMenu(); if(cur==='pipeline')render();
+  if(LIVE&&l.opportunityId){ try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:s.id}); if(res&&res.ok!==false)toast(`${l.name}: ${from} → ${s.name}`); else toastErr(`Move failed · ${l.name}`);}catch(e){toastErr(`Move failed · ${l.name}`);} }
+  else if(LIVE&&!l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
+}
+async function removeLead(id){
+  const l=LEADS.find(x=>x.id===id); if(!l)return;
+  const name=l.name, oppId=l.opportunityId;
+  closeLeadMenu();
+  LEADS=LEADS.filter(x=>x.id!==id);            // optimistic remove
+  if(cur!=='inbox')render();
+  if(LIVE&&oppId){ try{const res=await post({action:'delete',opportunityId:oppId}); if(res&&res.ok!==false)toast(`Removed from pipeline · ${name}`); else toastErr(`Remove failed · ${name}`);}catch(e){toastErr(`Remove failed · ${name}`);} }
+  else if(LIVE&&!oppId){ toastErr(`${name} has no opportunity to remove`); }
 }
 
 /* ---------------- LEADS table ---------------- */

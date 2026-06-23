@@ -218,7 +218,7 @@ const CONFIG = {
   fnUrl:       "https://kujrcdkswpjrjmnmciai.functions.supabase.co/hl",
   supabaseUrl: "https://kujrcdkswpjrjmnmciai.supabase.co",
   anonKey:     "sb_publishable_LO0Znh4ZhwOMzAO8rjAhZw_BieIrkjF",
-  refreshMs:   30000,
+  refreshMs:   20000,
 };
 
 /* The "DM's" pipeline stages (from ?action=pipelines). Refreshed live on boot. */
@@ -377,9 +377,9 @@ function renderNav(){
   renderLiveChip();
 }
 function renderLiveChip(){
-  const w=document.getElementById('livewrap');
+  const w=document.getElementById('livewrap');if(!w)return;
   w.innerHTML = LIVE
-   ? `<div class="livechip"><span class="dot"></span> Live · HighLevel</div>`
+   ? `<div class="livechip"><span class="dot"></span> Live · HighLevel${rtOn?' · realtime':''}</div>`
    : `<span class="proto-badge" title="${esc(loadError||'')}">DEMO · backend unreachable</span>`;
 }
 function go(id){cur=id;renderNav();render()}
@@ -745,18 +745,17 @@ function vSettings(v){
 async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Still using demo data'); }
 
 /* ---------------- realtime ---------------- */
-let rtTimer=null;
-function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(cur==='inbox')renderIList();else render();renderNav();},900);}
+let rtTimer=null, rtOn=false;
+function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else render();renderNav();},700);}
 async function startRealtime(){
   if(!LIVE)return;
   try{
     const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
     const sb=createClient(CONFIG.supabaseUrl,CONFIG.anonKey);
-    sb.channel('crm')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'events'},refreshSoon)
-      .on('postgres_changes',{event:'*',schema:'public',table:'leads_cache'},refreshSoon)
-      .subscribe();
-  }catch(e){/* polling covers it */}
+    sb.channel('crm-signal')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'crm_signal'},()=>{window.__rtPings=(window.__rtPings||0)+1;refreshSoon();})
+      .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
+  }catch(e){ window.__rtStatus='error'; }
 }
 
 /* ---------------- shared ---------------- */

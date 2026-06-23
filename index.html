@@ -320,6 +320,7 @@ async function refreshStages(){
 /* ---------------- nav ---------------- */
 const VIEWS=[
  {id:'dashboard',name:'Dashboard',ic:'▦'},
+ {id:'jake',name:'Ask Jake',ic:'🤖'},
  {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(l=>l.unread).length},
  {id:'pipeline',name:'Pipeline',ic:'▤'},
  {id:'leads',name:'Leads',ic:'☷'},
@@ -343,7 +344,7 @@ function renderLiveChip(){
 }
 function go(id){cur=id;renderNav();render()}
 
-const TITLES={dashboard:['Dashboard','Your sales command center'],inbox:['Inbox','Every DM, one structured engine'],
+const TITLES={dashboard:['Dashboard','Your sales command center'],jake:['Ask Jake','Your AI sales assistant — acts on live HighLevel'],inbox:['Inbox','Every DM, one structured engine'],
  pipeline:['Pipeline','Drag leads through your funnel'],leads:['Leads','All contacts, scored by AI'],
  analytics:['Analytics','Where deals leak and win'],automations:['Automations','Your AI on autopilot'],settings:['Settings','Connections & preferences']};
 
@@ -351,7 +352,7 @@ function render(){
   const [t,s]=TITLES[cur];document.getElementById('ptitle').textContent=t;document.getElementById('psub').textContent=s;
   const v=document.getElementById('view');v.style.padding=(cur==='inbox'||cur==='pipeline')?'18px 24px':'22px 24px';
   // Honest error state — never render fake data when HighLevel is unreachable.
-  if(!LIVE && !LEADS.length && cur!=='settings'){
+  if(!LIVE && !LEADS.length && cur!=='settings' && cur!=='jake'){
     v.style.padding='22px 24px';
     v.innerHTML=`<div class="panel-card" style="max-width:520px;margin:40px auto;text-align:center">
       <div style="font-size:30px;margin-bottom:8px">📡</div>
@@ -361,7 +362,7 @@ function render(){
     </div>`;
     return;
   }
-  ({dashboard:vDashboard,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings}[cur])(v);
+  ({dashboard:vDashboard,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings,jake:vJake}[cur])(v);
 }
 
 /* ---------------- score widgets ---------------- */
@@ -712,11 +713,60 @@ function vSettings(v){
       <div class="kv"><span class="k">Booked stages</span><span class="v">→ score boost</span></div>
     </div></div>`;
 }
-async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Still using demo data'); }
+async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
+
+/* ---------------- JAKE (AI assistant) ---------------- */
+let jakeMsgs=[], jakeBusy=false;
+const JAKE_PROMPTS=['Who needs a reply today?','Show my hottest leads','Summarize the pipeline','Who booked a call recently?'];
+function vJake(v){
+  v.style.padding='0';
+  v.innerHTML=`<div style="display:flex;flex-direction:column;height:calc(100vh - 60px);max-width:880px;margin:0 auto;width:100%">
+    <div class="msgs" id="jmsgs" style="padding:22px 18px"></div>
+    <div class="composer" style="padding:10px 18px 16px">
+      <div class="sugg" id="jsugg"></div>
+      <div class="cbox"><textarea id="jinput" rows="1" placeholder="Ask Jake to find leads, move stages, draft replies…" oninput="grow(this)"></textarea><button class="send" onclick="sendJake()">➤</button></div>
+    </div>
+  </div>`;
+  document.getElementById('jsugg').innerHTML=JAKE_PROMPTS.map(s=>`<div class="schip" data-s="${esc(s).replace(/"/g,'&quot;')}" onclick="jakeSay(this.getAttribute('data-s'))">✨ ${esc(s)}</div>`).join('');
+  renderJake();
+  setTimeout(()=>document.getElementById('jinput')?.focus(),0);
+}
+function actLabel(a){ if(a.kind==='move')return `${a.lead} → ${a.to}`; if(a.kind==='tag')return `${a.lead} +${a.tag}`; if(a.kind==='send')return `DM sent · ${a.lead}`; return a.kind; }
+function renderJake(){
+  const m=document.getElementById('jmsgs'); if(!m) return;
+  if(!jakeMsgs.length){
+    m.innerHTML=`<div style="text-align:center;margin:auto;max-width:440px">
+      <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:26px;margin:0 auto 14px">🤖</div>
+      <div style="font-weight:800;font-size:17px">Jake — your DM assistant</div>
+      <div class="muted" style="font-size:12.5px;margin-top:7px;line-height:1.55">Ask about your pipeline, or tell me to move a lead, tag someone, or draft a reply. I work off your live HighLevel data and make the changes for you. I'll always show you a DM draft and confirm before sending.</div>
+    </div>`;
+    return;
+  }
+  m.innerHTML=jakeMsgs.map(msg=>{
+    const who=msg.role==='user'?'us':'them';
+    const label=msg.role==='user'?'Coach Ben':'Jake<span class="ai-tag">AI</span>';
+    const body=esc(msg.content).replace(/\n/g,'<br>');
+    const acts=(msg.actions&&msg.actions.length)?`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px">${msg.actions.map(a=>`<span class="ctag" style="color:#9be8c0;border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.12)">✓ ${esc(actLabel(a))}</span>`).join('')}</div>`:'';
+    return `<div class="m ${who}"><div class="who">${label}</div><div class="bub">${body}${acts}</div></div>`;
+  }).join('')+(jakeBusy?`<div class="m them"><div class="who">Jake<span class="ai-tag">AI</span></div><div class="bub"><span class="muted">thinking…</span></div></div>`:'');
+  m.scrollTop=m.scrollHeight;
+}
+function jakeSay(s){ const i=document.getElementById('jinput'); if(i){i.value=s;grow(i);} sendJake(); }
+async function sendJake(){
+  const i=document.getElementById('jinput'); const val=(i?.value||'').trim(); if(!val||jakeBusy)return;
+  jakeMsgs.push({role:'user',content:val}); if(i){i.value='';grow(i);} jakeBusy=true; renderJake();
+  try{
+    const res=await post({action:'chat',messages:jakeMsgs.filter(m=>m.role==='user'||m.role==='assistant').map(m=>({role:m.role,content:m.content}))});
+    jakeBusy=false;
+    jakeMsgs.push({role:'assistant',content:res.reply||'(no reply)',actions:res.actions||[]});
+    renderJake();
+    if(res.actions&&res.actions.length) refreshSoon();
+  }catch(e){ jakeBusy=false; jakeMsgs.push({role:'assistant',content:'Network error reaching Jake — try again.'}); renderJake(); }
+}
 
 /* ---------------- realtime ---------------- */
 let rtTimer=null, rtOn=false;
-function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else render();renderNav();},700);}
+function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else if(cur!=='jake')render();renderNav();},700);}
 async function startRealtime(){
   if(!LIVE)return;
   try{
@@ -775,7 +825,7 @@ async function boot(){
   await Promise.all([loadLeads(), refreshStages()]);
   if(authFailed){ logout(); return; }
   renderNav();render();startRealtime();
-  setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else render();renderNav();},CONFIG.refreshMs);
+  setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}if(cur==='inbox')renderIList();else if(cur!=='jake')render();renderNav();},CONFIG.refreshMs);
 }
 boot();
 </script>

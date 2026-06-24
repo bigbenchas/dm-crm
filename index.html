@@ -132,6 +132,13 @@
   .crow .tm{font-size:10px;color:var(--muted2);margin-left:auto}
   .crow .snip{font-size:11.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .unread{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(79,141,253,.8)}
+  .btn.xs{padding:4px 9px;font-size:11px;border-radius:8px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .ibar{display:flex;align-items:center;gap:8px;padding:2px 6px 8px;font-size:11.5px;color:var(--muted)}
+  .ibar-chk{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+  .crow-chk{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;align-self:center}
+  .urdot{width:12px;height:12px;border-radius:50%;border:none;cursor:pointer;padding:0;background:var(--accent);box-shadow:0 0 8px rgba(79,141,253,.8)}
+  .urdot.read{background:transparent;border:1.5px solid var(--muted2);box-shadow:none}
   .thread{flex:1;display:flex;flex-direction:column;min-width:0}
   .t-head{display:flex;align-items:center;gap:12px;padding:6px 6px 14px;border-bottom:1px solid var(--border-soft)}
   .msgs{flex:1;overflow-y:auto;padding:18px 6px;display:flex;flex-direction:column;gap:11px}
@@ -341,7 +348,7 @@ async function refreshStages(){
 const VIEWS=[
  {id:'dashboard',name:'Dashboard',ic:'▦'},
  {id:'jake',name:'Ask Jake',ic:'🤖'},
- {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(l=>l.unread).length},
+ {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(unreadEff).length},
  {id:'pipeline',name:'Pipeline',ic:'▤'},
  {id:'leads',name:'Leads',ic:'☷'},
  {id:'analytics',name:'Analytics',ic:'📈'},
@@ -467,28 +474,55 @@ function vInbox(v){
 }
 const ITABS=[['all','All'],['unread','Unread'],['needs','Needs reply'],['booked','Booked']];
 function renderITabs(){document.getElementById('itabs').innerHTML=ITABS.map(t=>`<div class="itab ${t[0]===iTab?'active':''}" onclick="setITab('${t[0]}')">${t[1]}</div>`).join('')}
-function setITab(t){iTab=t;renderIList()}
+function setITab(t){iTab=t;renderITabs();renderIList()}   // re-render tabs so the clicked one highlights
 function iFiltered(){const q=gq();return LEADS.filter(l=>{
   if(!l.hasConv)return false;   // Inbox mirrors HighLevel conversations (everyone with DM activity)
-  if(iTab==='unread'&&!l.unread)return false;if(iTab==='needs'&&!l.needs)return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
+  if(iTab==='unread'&&!unreadEff(l))return false;if(iTab==='needs'&&!l.needs)return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
   if(q&&!((l.name+' '+l.loc+' '+l.tags.join(' ')+' '+(l.lastMessage||'')).toLowerCase().includes(q)))return false;return true;})}
+// --- read state (persists in the browser so read items don't pop back on refresh; a NEW
+//     message (higher lastMs than when marked read) makes it unread again) + HL best-effort sync ---
+let READ={}; try{ READ=JSON.parse(localStorage.getItem('bb_read')||'{}'); }catch(e){ READ={}; }
+function saveRead(){ try{ localStorage.setItem('bb_read',JSON.stringify(READ)); }catch(e){} }
+function unreadEff(l){ return !!(l && l.unread && !(READ[l.id]!=null && READ[l.id]>=(l.lastMs||0))); }
+function markRead(ids, read){
+  ids.forEach(id=>{ const l=LEADS.find(x=>x.id===id); if(!l)return;
+    if(read){ READ[id]=l.lastMs||Date.now(); if(LIVE&&l.contactId) post({action:'read',contactId:l.contactId}).catch(()=>{}); }
+    else { delete READ[id]; }
+  });
+  saveRead();
+}
+let selSet=new Set();
+function toggleSel(id,on){ if(on)selSet.add(id); else selSet.delete(id); renderIList(); }
+function toggleSelectAll(on){ const rows=iFiltered(); rows.forEach(l=>{ if(on)selSet.add(l.id); else selSet.delete(l.id); }); renderIList(); }
+function markSelectedRead(){ if(!selSet.size)return; const ids=[...selSet]; markRead(ids,true); selSet.clear(); renderIList(); renderNav(); toast('Marked '+ids.length+' as read'); }
+function markAllRead(){ const ids=iFiltered().filter(unreadEff).map(l=>l.id); if(!ids.length){toast('Nothing unread');return;} markRead(ids,true); selSet.clear(); renderIList(); renderNav(); toast('Marked '+ids.length+' as read'); }
+function toggleRead(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; markRead([id], unreadEff(l)); renderIList(); renderNav(); }
 function renderIList(){
   const wrap=document.getElementById('iconvos');if(!wrap)return;
-  wrap.innerHTML=iFiltered().map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');
+  const rows=iFiltered();
+  const sel=rows.filter(l=>selSet.has(l.id)).length;
+  const bar=`<div class="ibar">
+     <label class="ibar-chk"><input type="checkbox" ${sel&&sel===rows.length?'checked':''} onclick="toggleSelectAll(this.checked)"><span>${sel?sel+' selected':'Select all'}</span></label>
+     <span style="margin-left:auto;display:flex;gap:6px">
+       <button class="btn xs" onclick="markSelectedRead()" ${sel?'':'disabled'}>✓ Mark read</button>
+       <button class="btn xs" onclick="markAllRead()">Mark all read</button>
+     </span></div>`;
+  wrap.innerHTML=bar+(rows.map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');const ur=unreadEff(l);
    return `<div class="crow ${l.id===activeId?'active':''}" onclick="openConvo('${l.id}')">
+     <input type="checkbox" class="crow-chk" ${selSet.has(l.id)?'checked':''} onclick="event.stopPropagation();toggleSel('${l.id}',this.checked)">
      <div class="ava" style="width:40px;height:40px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
-     <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px"><span class="nm">${esc(l.name)}</span><span class="tm">${esc(l.time)}</span></div>
+     <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px"><span class="nm">${esc(l.name)}</span><span class="tm">${esc(l.time)}</span>
+       <button class="urdot ${ur?'':'read'}" title="${ur?'Mark as read':'Mark as unread'}" onclick="event.stopPropagation();toggleRead('${l.id}')"></button></div>
        <div class="snip">${esc(snip)||'<span class="muted">No messages yet</span>'}</div>
        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
          <span class="stage-chip" style="background:${STAGEBG_score(l.score)};color:${scColor(l.score)}">${esc(l.stageName||stLabel(l.group))}</span>
          <span class="scpill" style="font-size:9.5px;padding:1px 7px 1px 5px;color:${scColor(l.score)};background:${STAGEBG_score(l.score)}"><span class="d" style="width:6px;height:6px;background:${scColor(l.score)}"></span>${l.score}</span>
          ${l.needs?'<span class="stage-chip" style="background:rgba(245,165,36,.15);color:#f7c065">Needs reply</span>':''}
-         ${l.unread?'<span class="unread" style="margin-left:auto"></span>':''}
-       </div></div></div>`}).join('')||`<div class="muted" style="padding:24px;text-align:center;font-size:13px">No conversations</div>`;
+       </div></div></div>`}).join('')||`<div class="muted" style="padding:24px;text-align:center;font-size:13px">No conversations</div>`);
 }
 async function openConvo(id){
   activeId=id;const l=LEADS.find(x=>x.id===id);if(!l)return;
-  l.unread=false;renderNav();renderIList();renderThread(l);renderICtx(l);
+  renderNav();renderIList();renderThread(l);renderICtx(l);   // opening does NOT mark read — Ben marks read explicitly
   if(LIVE) fetchSuggestions(l);   // Jake drafts a reply from the playbook + live thread
   if(LIVE && !l.msgs){
     try{
@@ -633,6 +667,11 @@ function vPipeline(v){
   const cols=pipelineColumns();const q=gq();
   v.innerHTML=`<div class="board" id="board" style="height:calc(100vh - 150px)"></div>`;
   const board=document.getElementById('board');
+  // While dragging a card, auto-scroll the board when the cursor nears an edge, so you can
+  // reach far-away columns without dropping. dragX tracks the pointer; a timer does the scroll.
+  board.addEventListener('dragover',e=>{ e.preventDefault(); window.__dragX=e.clientX; });
+  board.__autoscroll=()=>{ const r=board.getBoundingClientRect(); const x=window.__dragX||0; const edge=90;
+    if(x>r.right-edge) board.scrollLeft+=26; else if(x<r.left+edge && x>0) board.scrollLeft-=26; };
   cols.forEach(cdef=>{
     const col=document.createElement('div');col.className='col';col.style.setProperty('--c',cdef.color);
     const inSt=LEADS.filter(l=>cdef.match(l) && (!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q))));
@@ -653,7 +692,10 @@ async function moveLeadToColumn(l,cdef){
     if(l.stageId===cdef.stageId)return;
     l.stageId=cdef.stageId;l.stageName=cdef.name;l.group=stageGroup(cdef.name);l.booked=l.group==='booked'||l.group==='won';
   }else{ if(l.group===cdef.key)return; l.group=cdef.key; }
+  const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0;
   render();
+  const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left;   // keep the board where it was, don't jump to the start
+  lastSig=leadsSig();   // we already reflected this change, so the next poll won't re-render over it
   if(LIVE && l.opportunityId && cdef.stageId){
     try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:cdef.stageId});
       if(res&&res.ok!==false) toast(`${l.name}: ${fromName} → ${cdef.name}`); else toastErr(`Move failed · ${l.name}`);}
@@ -668,15 +710,16 @@ function kcard(l){
      ${scpill2(l.score)}</div>
    <div class="snip">${esc(l.lastMessage)||'<span class="muted">No messages</span>'}</div>
    <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
-  c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging')});
-  c.addEventListener('dragend',()=>c.classList.remove('dragging'));
+  c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging');
+    clearInterval(window.__dragTimer); window.__dragTimer=setInterval(()=>{const b=document.getElementById('board');if(b&&b.__autoscroll)b.__autoscroll();},16);});
+  c.addEventListener('dragend',()=>{c.classList.remove('dragging');clearInterval(window.__dragTimer);});
   c.addEventListener('click',()=>openLeadMenu(l.id));  // open the lead action card
   return c;
 }
 
 /* ---------------- lead action menu (click a card) ---------------- */
 let lmId=null, lmConfirm=false;
-function openLeadMenu(id){ lmId=id; lmConfirm=false; renderLeadMenu(); }
+function openLeadMenu(id){ lmId=id; lmConfirm=false; renderLeadMenu(); const l=LEADS.find(x=>x.id===id); if(l) fetchNotes(l); }
 function closeLeadMenu(){ lmId=null; lmConfirm=false; const b=document.getElementById('lmBack'); if(b)b.remove(); }
 function renderLeadMenu(){
   const l=LEADS.find(x=>x.id===lmId); if(!l){closeLeadMenu();return;}
@@ -702,6 +745,10 @@ function renderLeadMenu(){
       ${quick?`<div class="lm-stages" style="margin-bottom:9px">${quick}</div>`:''}
       <div style="display:flex;gap:6px"><input id="lmTag" class="inp" placeholder="add a custom tag…" style="flex:1;padding:7px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addLeadTagInput('${l.id}')"><button class="btn sm" onclick="addLeadTagInput('${l.id}')">Add</button></div>
     </div>
+    <div class="sec" style="padding:10px 0 4px"><h4>Notes</h4>
+      <div id="lmNotes" style="max-height:160px;overflow:auto;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px"><textarea id="lmNote" class="inp" placeholder="Add a note about this account…" style="flex:1;padding:7px 10px;font-size:12px;height:36px;resize:vertical"></textarea><button class="btn sm" onclick="addNote('${l.id}')">Add</button></div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn primary" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
       ${lmConfirm
@@ -710,6 +757,28 @@ function renderLeadMenu(){
     </div>
     ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept. To make them a client, use Move to stage → Current Athlete instead.</div>`:''}
   </div>`;
+  renderLeadNotes(l);   // notes persist on the lead object, so they survive re-renders (tag edits etc.)
+}
+// ---- Account notes (synced to HighLevel) ----
+function renderLeadNotes(l){
+  const el=document.getElementById('lmNotes'); if(!el||lmId!==l.id) return;
+  const n=l._notes;
+  if(n===undefined){ el.innerHTML='<div class="muted" style="font-size:11.5px">Loading notes…</div>'; return; }
+  if(!n.length){ el.innerHTML='<div class="muted" style="font-size:11.5px">No notes yet.</div>'; return; }
+  el.innerHTML=n.map(x=>`<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;margin-bottom:6px"><div style="font-size:12px;line-height:1.5;white-space:pre-wrap;color:#dfe6f2">${esc(x.body)}</div>${x.createdAt?`<div class="muted" style="font-size:10px;margin-top:3px">${esc(fmtTime(x.createdAt))}</div>`:''}</div>`).join('');
+}
+async function fetchNotes(l){
+  if(!l) return; l._notes=undefined; renderLeadNotes(l);
+  if(!LIVE||!l.contactId){ l._notes=[]; renderLeadNotes(l); return; }
+  try{ const r=await authGet('?action=notes&contactId='+encodeURIComponent(l.contactId)); const j=await r.json(); l._notes=(j.notes||[]); }
+  catch(e){ l._notes=[]; }
+  renderLeadNotes(l);
+}
+async function addNote(id){
+  const l=LEADS.find(x=>x.id===id); const t=document.getElementById('lmNote'); const v=(t&&t.value||'').trim(); if(!l||!v) return;
+  if(t)t.value='';
+  l._notes=[{body:v,createdAt:new Date().toISOString()},...(l._notes||[])]; renderLeadNotes(l);   // optimistic
+  if(LIVE&&l.contactId){ try{const r=await post({action:'note',contactId:l.contactId,body:v}); if(r&&r.ok!==false){ toast('Note added · '+l.name); fetchNotes(l); } else toastErr('Note failed · '+l.name);}catch(e){toastErr('Note failed · '+l.name);} }
 }
 const LM_QUICKTAGS=['closer','serious','hot','has coach','foundations','not interested'];
 async function addLeadTag(id,tag){
@@ -729,7 +798,8 @@ async function jumpStage(id,stageId){
   const l=LEADS.find(x=>x.id===id); const s=STAGES.find(x=>x.id===stageId); if(!l||!s)return;
   const from=l.stageName||stLabel(l.group);
   l.stageId=s.id; l.stageName=s.name; l.group=stageGroup(s.name); l.booked=l.group==='booked'||l.group==='won';
-  closeLeadMenu(); if(cur==='pipeline')render();
+  closeLeadMenu();
+  if(cur==='pipeline'){ const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0; render(); const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left; lastSig=leadsSig(); }
   if(LIVE&&l.opportunityId){ try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:s.id}); if(res&&res.ok!==false)toast(`${l.name}: ${from} → ${s.name}`); else toastErr(`Move failed · ${l.name}`);}catch(e){toastErr(`Move failed · ${l.name}`);} }
   else if(LIVE&&!l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
 }

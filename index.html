@@ -576,18 +576,29 @@ function renderICtx(l){
 }
 function curLead(){return LEADS.find(l=>l.id===activeId)}
 function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
-function useSug(i){const l=curLead();const arr=(l._jake&&l._jake.suggestions&&l._jake.suggestions.length?l._jake.suggestions:suggestions(l));const r=document.getElementById('reply');r.value=arr[i]||'';grow(r);r.focus()}
+function useSug(i){const l=curLead();const arr=(l._jake&&l._jake.suggestions&&l._jake.suggestions.length?l._jake.suggestions:suggestions(l));const r=document.getElementById('reply');r.value=arr[i]||'';l._usedSug=arr[i]||'';grow(r);r.focus()}
 async function sendReply(){
   const r=document.getElementById('reply');const val=r.value.trim();if(!val)return;
   const l=curLead();
+  const usedSug=l._usedSug||''; const usedMode=(l._jake&&l._jake.mode)||'';
   l.msgs=l.msgs||[];l.msgs.push({who:'us',ai:0,t:val,time:'Just now'});
   l.needs=false;l.lastMessage=val;l.lastDir='outbound';
+  l._usedSug=''; l._jake=undefined;   // next open re-drafts fresh, using what Jake just learned
   r.value='';grow(r);renderThread(l);renderIList();
   if(LIVE){
     try{const res=await post({action:'send',contactId:l.contactId,channel:l.plat==='fb'?'FB':'IG',message:val});
-      if(res&&res.ok!==false) toast('Reply sent · '+l.name); else toastErr('Send failed · '+l.name);}
+      if(res&&res.ok!==false){ toast('Reply sent · '+l.name); learnFromSend(l.contactId,val,usedSug,usedMode); }
+      else toastErr('Send failed · '+l.name);}
     catch(e){toastErr('Send failed · '+l.name);}
   } else toast('Reply queued · '+l.name+' (demo)');
+}
+// Jake learns from every reply Coach Ben sends + how he edits Jake's drafts. Fire-and-forget.
+async function learnFromSend(contactId,sent,suggestion,mode){
+  try{
+    const r=await post({action:'learn',contactId,sent,suggestion:suggestion||'',mode:mode||''});
+    const total=(r&&r.total)||0; window.__learned=total;
+    if(total && total%15===0) post({action:'distillvoice'}).catch(()=>{});  // refresh learned voice every 15 sends
+  }catch(e){}
 }
 const BOOK_MSGS=["Awesome, here is my calendar. http://tinyurl.com/strategy-call-coachben",
  "Go ahead and book in now! Spots usually fill quick. Once you're done just let me know what time you picked, cool?"];
@@ -839,10 +850,27 @@ function vSettings(v){
       <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Jake's voice and flow — commas only, the conversation arc, the exact transition line, the hard rules. Edit and save to change how every suggested reply is written. (Your HighLevel token is never stored here.)</p>
       <textarea id="jakePb" class="inp" style="height:300px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.55;resize:vertical" placeholder="Loading playbook…"></textarea>
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn primary sm" onclick="savePlaybook()">Save playbook</button><span id="pbStatus" class="muted" style="font-size:11px"></span></div>
+    </div>
+    <div class="panel-card" style="margin-top:16px">
+      <div class="ph"><span>🧠</span><h3>Jake's learned voice</h3><span class="muted" id="voiceCount" style="margin-left:auto;font-size:11px">—</span></div>
+      <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Jake learns your voice automatically from every reply you send and every edit you make to his drafts, then writes future suggestions to match. It sharpens on its own as you work, or refresh it now.</p>
+      <div id="jakeVoice" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;max-height:300px;overflow:auto;color:#dfe6f2"></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn sm" onclick="refreshVoice()">↻ Update voice from my messages</button><span id="voiceStatus" class="muted" style="font-size:11px"></span></div>
     </div>`;
   loadPlaybook();
 }
-async function loadPlaybook(){ try{const r=await authGet('?action=getconfig');const j=await r.json();const t=document.getElementById('jakePb');if(t)t.value=j.playbook||'';}catch(e){} }
+async function loadPlaybook(){ try{const r=await authGet('?action=getconfig');const j=await r.json();
+  const t=document.getElementById('jakePb');if(t)t.value=j.playbook||'';
+  const v=document.getElementById('jakeVoice');if(v)v.textContent=j.voice||'Jake hasn’t learned your voice yet — send a few replies and a profile will build automatically.';
+  const c=document.getElementById('voiceCount');if(c)c.textContent=(j.learned||0)+' messages learned';
+}catch(e){} }
+async function refreshVoice(){ const s=document.getElementById('voiceStatus'); if(s)s.textContent='Learning from your messages…';
+  try{ const r=await post({action:'distillvoice'});
+    if(r&&r.ok){ if(s)s.textContent='Updated ✓'; loadPlaybook(); }
+    else if(s)s.textContent=(r&&r.n!=null&&r.n<5)?('Send a few more replies first ('+r.n+'/5)'):'Could not update';
+  }catch(e){ if(s)s.textContent='Could not update'; }
+  setTimeout(()=>{const s2=document.getElementById('voiceStatus');if(s2&&s2.textContent.indexOf('Learning')<0)s2.textContent='';},3500);
+}
 async function savePlaybook(){ const t=document.getElementById('jakePb'),s=document.getElementById('pbStatus'); if(!t)return; s.textContent='Saving…'; try{const r=await post({action:'setconfig',playbook:t.value}); s.textContent=(r&&r.ok!==false)?'Saved ✓ — new suggestions use this now':'Save failed'; setTimeout(()=>{if(s)s.textContent='';},3000);}catch(e){s.textContent='Save failed';} }
 async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
 

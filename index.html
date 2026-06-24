@@ -127,6 +127,10 @@
   .itab.active{background:var(--accent);border-color:transparent;color:#fff}
   .ifilter{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--font);max-width:160px}
   .ifilter:focus{outline:none;border-color:var(--accent)}
+  .snz{position:relative;display:inline-flex}
+  .snz-pop{position:absolute;top:100%;right:0;margin-top:4px;flex-direction:column;background:#141923;border:1px solid var(--border);border-radius:10px;padding:4px;z-index:60;min-width:124px;box-shadow:0 10px 28px rgba(0,0,0,.45)}
+  .snz-pop button{background:none;border:none;color:var(--text);text-align:left;padding:7px 10px;font-size:12px;cursor:pointer;border-radius:7px;font-family:var(--font);width:100%}
+  .snz-pop button:hover{background:var(--panel2)}
   .ifilter option,.ifilter optgroup{background:#141923;color:var(--text)}
   .iconvos{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px}
   .crow{display:flex;gap:10px;padding:10px;border-radius:12px;cursor:pointer;transition:.12s}
@@ -350,6 +354,7 @@ async function refreshStages(){
 /* ---------------- nav ---------------- */
 const VIEWS=[
  {id:'dashboard',name:'Dashboard',ic:'▦'},
+ {id:'today',name:'Today',ic:'☀',badge:()=>todayCount()},
  {id:'jake',name:'Ask Jake',ic:'🤖'},
  {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(unreadEff).length},
  {id:'pipeline',name:'Pipeline',ic:'▤'},
@@ -374,7 +379,7 @@ function renderLiveChip(){
 }
 function go(id){cur=id;renderNav();render()}
 
-const TITLES={dashboard:['Dashboard','Your sales command center'],jake:['Ask Jake','Your AI sales assistant — acts on live HighLevel'],inbox:['Inbox','Every DM, one structured engine'],
+const TITLES={dashboard:['Dashboard','Your sales command center'],today:['Today','Your daily action queue — work it to zero'],jake:['Ask Jake','Your AI sales assistant — acts on live HighLevel'],inbox:['Inbox','Every DM, one structured engine'],
  pipeline:['Pipeline','Drag leads through your funnel'],leads:['Leads','All contacts, scored by AI'],
  analytics:['Analytics','Where deals leak and win'],automations:['Automations','Your AI on autopilot'],settings:['Settings','Connections & preferences']};
 
@@ -392,7 +397,7 @@ function render(){
     </div>`;
     return;
   }
-  ({dashboard:vDashboard,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings,jake:vJake}[cur])(v);
+  ({dashboard:vDashboard,today:vToday,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings,jake:vJake}[cur])(v);
 }
 
 /* ---------------- score widgets ---------------- */
@@ -463,6 +468,67 @@ function dashInsights(){
   if(cold && rows.length<3) rows.push(['rgba(248,113,113,.15)','📉',`${cold} cold leads`,`Low intent right now — a re-engage nudge could recover some.`]);
   return rows.slice(0,3).map(r=>`<div class="insight"><div class="ic" style="background:${r[0]}">${r[1]}</div><div><div class="it">${r[2]}</div><div class="id">${r[3]}</div></div></div>`).join('')||emptyRow();
 }
+
+/* ---------------- TODAY (follow-up engine + daily queue) ---------------- */
+// Follow-up / snooze state lives in shared Supabase (crm_followup), like read-state, so it's
+// durable + cross-device. FOLLOW[contactId] = ms-epoch when a follow-up is due (snoozed until then).
+let FOLLOW={}; try{ FOLLOW=JSON.parse(localStorage.getItem('bb_follow')||'{}'); }catch(e){ FOLLOW={}; }
+function saveFollow(){ try{ localStorage.setItem('bb_follow',JSON.stringify(FOLLOW)); }catch(e){} }
+async function loadFollowMap(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_followup').select('contact_id,remind_at'); FOLLOW={}; (data||[]).forEach(r=>{ const ms=Number(r.remind_at)||0; if(ms>0) FOLLOW[r.contact_id]=ms; }); saveFollow(); }catch(e){} }
+async function pushFollow(contactId, ms){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(ms){ await sb.from('crm_followup').upsert({contact_id:contactId,remind_at:ms,updated_at:new Date().toISOString()}); } else { await sb.from('crm_followup').delete().eq('contact_id',contactId); } }catch(e){} }
+const NOW=()=>Date.now();
+function hoursSince(l){ return l.lastMs? (NOW()-l.lastMs)/3.6e6 : 9999; }
+function isSnoozed(l){ const m=FOLLOW[l.id]; return !!(m && m>NOW()); }
+function isDue(l){ const m=FOLLOW[l.id]; return !!(m && m<=NOW()); }
+function snooze(id, days){ const l=LEADS.find(x=>x.id===id); if(!l)return; const ms=NOW()+days*864e5; FOLLOW[id]=ms; saveFollow(); pushFollow(l.contactId,ms); toast('Follow-up set · '+l.name+' · '+(days>=7?'1 week':days+'d')); refreshToday(); }
+function clearFollow(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; delete FOLLOW[id]; saveFollow(); pushFollow(l.contactId,0); refreshToday(); }
+function followDone(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; markRead([l.id],true); delete FOLLOW[id]; saveFollow(); pushFollow(l.contactId,0); renderNav(); refreshToday(); toast('Done · '+l.name); }
+function refreshToday(){ if(cur==='today')render(); renderNav(); const el=document.getElementById('lmFollow'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadFollow(ll); } }
+function renderLeadFollow(l){
+  const el=document.getElementById('lmFollow'); if(!el||lmId!==l.id)return;
+  const m=FOLLOW[l.id];
+  if(m){ const d=new Date(m), due=m<=Date.now();
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="color:${due?'#9be8c0':'var(--muted)'};font-size:12px">⏰ ${due?'Follow-up due now':'Reminder set · '+d.toLocaleDateString([], {month:'short',day:'numeric'})}</span><button class="btn xs" onclick="snooze('${l.id}',1)">+1d</button><button class="btn xs" onclick="snooze('${l.id}',3)">+3d</button><button class="btn xs" onclick="snooze('${l.id}',7)">+1wk</button><button class="btn xs" onclick="clearFollow('${l.id}')">Clear</button></div>`;
+  } else {
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Remind me to follow up:</span><button class="btn xs" onclick="snooze('${l.id}',1)">Tomorrow</button><button class="btn xs" onclick="snooze('${l.id}',3)">3 days</button><button class="btn xs" onclick="snooze('${l.id}',7)">1 week</button></div>`;
+  }
+}
+// Queue builders (clients excluded; recent/important first)
+function qReplyNow(){ return LEADS.filter(l=>!isClient(l)&&needsEff(l)&&!isSnoozed(l)).sort((a,b)=>b.score-a.score); }
+function qDue(){ return LEADS.filter(l=>!isClient(l)&&isDue(l)).sort((a,b)=>(FOLLOW[a.id]||0)-(FOLLOW[b.id]||0)); }
+function qCold(){ return LEADS.filter(l=>!isClient(l)&&l.inPipeline&&l.status==='open'&&l.lastDir==='outbound'&&!needsEff(l)&&!isSnoozed(l)&&!isDue(l)&&hoursSince(l)>=48&&hoursSince(l)<24*45).sort((a,b)=>b.score-a.score); }
+function qConfirm(){ return LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)&&!isSnoozed(l)).sort((a,b)=>b.score-a.score); }
+function todayCount(){ return qReplyNow().length + qDue().length; }   // the must-act-now items drive the badge
+function snoozeMenu(id){ return `<span class="snz"><button class="btn xs" onclick="event.stopPropagation();toggleSnz('${id}')">⏰ Snooze ▾</button><span class="snz-pop" id="snz_${id}" style="display:none"><button onclick="snooze('${id}',1)">Tomorrow</button><button onclick="snooze('${id}',3)">In 3 days</button><button onclick="snooze('${id}',7)">In 1 week</button></span></span>`; }
+function toggleSnz(id){ document.querySelectorAll('.snz-pop').forEach(p=>{ if(p.id!=='snz_'+id)p.style.display='none'; }); const p=document.getElementById('snz_'+id); if(p)p.style.display=p.style.display==='none'?'inline-flex':'none'; }
+function tItem(l, why, whyColor, actions){
+  return `<div class="lead-line" onclick="openLead('${l.id}')">
+    <div class="ava" style="width:38px;height:38px;font-size:13px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
+    <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(l.name)}</div>
+      <div style="font-size:11px;margin-top:1px;color:${whyColor}">${esc(why)}</div></div>
+    ${scpill2(l.score)}
+    <span style="display:flex;gap:6px;align-items:center;margin-left:6px" onclick="event.stopPropagation()">${actions}</span>
+  </div>`;
+}
+function tSection(title, emoji, leads, builder, empty){
+  if(!leads.length) return '';
+  return `<div class="panel-card" style="margin-bottom:14px"><div class="ph"><span>${emoji}</span><h3>${title}</h3><span class="muted" style="margin-left:auto;font-size:11px">${leads.length}</span></div>${leads.map(builder).join('')||`<div class="muted" style="font-size:12.5px">${empty}</div>`}</div>`;
+}
+function vToday(v){
+  const replyNow=qReplyNow(), due=qDue(), cold=qCold(), confirm=qConfirm();
+  const total=replyNow.length+due.length+cold.length+confirm.length;
+  v.innerHTML=`
+   ${total===0?`<div class="panel-card" style="max-width:520px;margin:30px auto;text-align:center"><div style="font-size:30px;margin-bottom:6px">✅</div><h3 style="font-size:16px">You're all caught up</h3><div class="muted" style="font-size:12.5px;margin-top:6px">No replies waiting, follow-ups due, or leads going cold. Nice work.</div></div>`:''}
+   ${tSection('Reply now','💬',replyNow,l=>tItem(l,'They messaged you'+(l.time&&l.time!=='—'?' · '+esc(l.time):''),'#f7c065',
+        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`),'')}
+   ${tSection('Follow-ups due','⏰',due,l=>tItem(l,'Follow-up you scheduled is due','#9be8c0',
+        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`),'')}
+   ${tSection('Going cold','📉',cold,l=>tItem(l,'You replied '+esc(l.time)+' ago, no response','#f87171',
+        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Nudge</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();clearFollow('${l.id}');snooze('${l.id}',7)">Later</button>`),'')}
+   ${tSection('Confirm booked calls','📅',confirm,l=>tItem(l,esc(l.stageName||'Booked'),'#4ade80',
+        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}`),'')}`;
+}
+document.addEventListener('click',e=>{ if(!e.target.closest('.snz')) document.querySelectorAll('.snz-pop').forEach(p=>p.style.display='none'); });
 
 /* ---------------- INBOX ---------------- */
 function vInbox(v){
@@ -796,6 +862,7 @@ function renderLeadMenu(){
       ${quick?`<div class="lm-stages" style="margin-bottom:9px">${quick}</div>`:''}
       <div style="display:flex;gap:6px"><input id="lmTag" class="inp" placeholder="add a custom tag…" style="flex:1;padding:7px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addLeadTagInput('${l.id}')"><button class="btn sm" onclick="addLeadTagInput('${l.id}')">Add</button></div>
     </div>
+    <div class="sec" style="padding:10px 0 4px"><h4>Follow-up</h4><div id="lmFollow"></div></div>
     <div class="sec" style="padding:10px 0 4px"><h4>Notes</h4>
       <div id="lmNotes" style="max-height:160px;overflow:auto;margin-bottom:8px"></div>
       <div style="display:flex;gap:6px"><textarea id="lmNote" class="inp" placeholder="Add a note about this account…" style="flex:1;padding:7px 10px;font-size:12px;height:36px;resize:vertical"></textarea><button class="btn sm" onclick="addNote('${l.id}')">Add</button></div>
@@ -809,6 +876,7 @@ function renderLeadMenu(){
     ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept. To make them a client, use Move to stage → Current Athlete instead.</div>`:''}
   </div>`;
   renderLeadNotes(l);   // notes persist on the lead object, so they survive re-renders (tag edits etc.)
+  renderLeadFollow(l);
 }
 // ---- Account notes (synced to HighLevel) ----
 function renderLeadNotes(l){
@@ -1074,6 +1142,7 @@ async function startRealtime(){
     sb.channel('crm-signal')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'crm_signal'},()=>{window.__rtPings=(window.__rtPings||0)+1;refreshSoon();})
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_read'},()=>{ loadReadMap().then(()=>{ renderNav(); if(cur==='inbox')renderIList(); }); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'crm_followup'},()=>{ loadFollowMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
       .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
   }catch(e){ window.__rtStatus='error'; }
 }
@@ -1122,11 +1191,11 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages(), loadReadMap()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
-  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
+  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

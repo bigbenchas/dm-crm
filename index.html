@@ -406,7 +406,7 @@ function vDashboard(v){
   const clients=LEADS.filter(isClient);
   const hot=[...prospects].sort((a,b)=>b.score-a.score).slice(0,5);
   const booked=prospects.filter(l=>l.group==='booked'||l.booked);
-  const needs=prospects.filter(l=>l.needs);
+  const needs=prospects.filter(needsEff);
   const avg=prospects.length?Math.round(prospects.reduce((a,b)=>a+b.score,0)/prospects.length):0;
   const kpis=[
    ['Active leads',prospects.length+'',(LIVE?'live from HighLevel':'demo data'),'flat'],
@@ -449,7 +449,7 @@ function isProspect(l){ return !!(l && l.inPipeline && !isClient(l)); }
 function emptyRow(){return `<div class="muted" style="padding:14px;font-size:12.5px">No leads loaded.</div>`}
 function dashInsights(){
   const P=LEADS.filter(isProspect);
-  const needs=P.filter(l=>l.needs).length;
+  const needs=P.filter(needsEff).length;
   const hot=[...P].sort((a,b)=>b.score-a.score)[0];
   const booked=P.filter(l=>l.group==='booked'||l.booked).length;
   const cold=P.filter(l=>l.score<38).length;
@@ -477,13 +477,16 @@ function renderITabs(){document.getElementById('itabs').innerHTML=ITABS.map(t=>`
 function setITab(t){iTab=t;renderITabs();renderIList()}   // re-render tabs so the clicked one highlights
 function iFiltered(){const q=gq();return LEADS.filter(l=>{
   if(!l.hasConv)return false;   // Inbox mirrors HighLevel conversations (everyone with DM activity)
-  if(iTab==='unread'&&!unreadEff(l))return false;if(iTab==='needs'&&!l.needs)return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
+  if(iTab==='unread'&&!unreadEff(l))return false;if(iTab==='needs'&&!needsEff(l))return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
   if(q&&!((l.name+' '+l.loc+' '+l.tags.join(' ')+' '+(l.lastMessage||'')).toLowerCase().includes(q)))return false;return true;})}
 // --- read state (persists in the browser so read items don't pop back on refresh; a NEW
 //     message (higher lastMs than when marked read) makes it unread again) + HL best-effort sync ---
 let READ={}; try{ READ=JSON.parse(localStorage.getItem('bb_read')||'{}'); }catch(e){ READ={}; }
 function saveRead(){ try{ localStorage.setItem('bb_read',JSON.stringify(READ)); }catch(e){} }
 function unreadEff(l){ return !!(l && l.unread && !(READ[l.id]!=null && READ[l.id]>=(l.lastMs||0))); }
+// "Needs reply" is treated like unread: marking it read (handled) clears it from the filter too;
+// a NEW inbound message (lastMs beyond when you marked it read) brings it back.
+function needsEff(l){ return !!(l && l.needs && !(READ[l.id]!=null && READ[l.id]>=(l.lastMs||0))); }
 function markRead(ids, read){
   ids.forEach(id=>{ const l=LEADS.find(x=>x.id===id); if(!l)return;
     if(read){ READ[id]=l.lastMs||Date.now(); l.unread=false; pushRead(l.contactId,READ[id]); }   // durable + cross-device
@@ -521,7 +524,7 @@ function renderIList(){
        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
          <span class="stage-chip" style="background:${STAGEBG_score(l.score)};color:${scColor(l.score)}">${esc(l.stageName||stLabel(l.group))}</span>
          <span class="scpill" style="font-size:9.5px;padding:1px 7px 1px 5px;color:${scColor(l.score)};background:${STAGEBG_score(l.score)}"><span class="d" style="width:6px;height:6px;background:${scColor(l.score)}"></span>${l.score}</span>
-         ${l.needs?'<span class="stage-chip" style="background:rgba(245,165,36,.15);color:#f7c065">Needs reply</span>':''}
+         ${needsEff(l)?'<span class="stage-chip" style="background:rgba(245,165,36,.15);color:#f7c065">Needs reply</span>':''}
        </div></div></div>`}).join('')||`<div class="muted" style="padding:24px;text-align:center;font-size:13px">No conversations</div>`);
 }
 async function openConvo(id){
@@ -620,7 +623,8 @@ async function sendReply(){
   const l=curLead();
   const usedSug=l._usedSug||''; const usedMode=(l._jake&&l._jake.mode)||'';
   l.msgs=l.msgs||[];l.msgs.push({who:'us',ai:0,t:val,time:'Just now'});
-  l.needs=false;l.lastMessage=val;l.lastDir='outbound';
+  markRead([l.id],true);   // replying = handled: clears unread + needs reply, persists to the shared store
+  l.needs=false;l.unread=false;l.lastMessage=val;l.lastDir='outbound';
   l._usedSug=''; l._jake=undefined;   // next open re-drafts fresh, using what Jake just learned
   r.value='';grow(r);renderThread(l);renderIList();
   if(LIVE){
@@ -662,6 +666,18 @@ async function tagCloser(id, fromInbox){
 }
 
 /* ---------------- PIPELINE ---------------- */
+// Carry the board view with the cursor while dragging a card, so far-away columns are reachable.
+// A global capture-phase listener tracks the pointer for the WHOLE drag (even over cards / past edges);
+// a timer scrolls the board proportionally to how deep into either edge zone the cursor is.
+let DRAG_X=0, DRAG_ON=false, DRAG_TIMER=null;
+document.addEventListener('dragover',e=>{ DRAG_X=e.clientX; }, true);
+function startDragScroll(){ DRAG_ON=true; if(DRAG_TIMER)return; DRAG_TIMER=setInterval(()=>{
+  if(!DRAG_ON)return; const b=document.getElementById('board'); if(!b)return;
+  const r=b.getBoundingClientRect(), edge=120;
+  if(DRAG_X>r.right-edge){ b.scrollLeft += Math.min(45, 8+(DRAG_X-(r.right-edge))/edge*45); }
+  else if(DRAG_X<r.left+edge){ b.scrollLeft -= Math.min(45, 8+((r.left+edge)-DRAG_X)/edge*45); }
+},16); }
+function stopDragScroll(){ DRAG_ON=false; clearInterval(DRAG_TIMER); DRAG_TIMER=null; }
 function pipelineColumns(){
   if(LIVE) return STAGES.map((s,i)=>({key:s.id,name:s.name,color:stageColorByIndex(i),stageId:s.id,match:l=>l.stageId===s.id}));
   const order=[['new','New DM','var(--new)'],['convo','In Convo','var(--convo)'],['script','Script','var(--script)'],['closer','Closer','var(--closer)'],['booked','Booked','var(--booked)'],['won','Client','var(--won)']];
@@ -671,11 +687,7 @@ function vPipeline(v){
   const cols=pipelineColumns();const q=gq();
   v.innerHTML=`<div class="board" id="board" style="height:calc(100vh - 150px)"></div>`;
   const board=document.getElementById('board');
-  // While dragging a card, auto-scroll the board when the cursor nears an edge, so you can
-  // reach far-away columns without dropping. dragX tracks the pointer; a timer does the scroll.
-  board.addEventListener('dragover',e=>{ e.preventDefault(); window.__dragX=e.clientX; });
-  board.__autoscroll=()=>{ const r=board.getBoundingClientRect(); const x=window.__dragX||0; const edge=90;
-    if(x>r.right-edge) board.scrollLeft+=26; else if(x<r.left+edge && x>0) board.scrollLeft-=26; };
+  board.addEventListener('dragover',e=>e.preventDefault());   // allow drops anywhere across the board
   cols.forEach(cdef=>{
     const col=document.createElement('div');col.className='col';col.style.setProperty('--c',cdef.color);col.dataset.key=cdef.key;
     const inSt=LEADS.filter(l=>cdef.match(l) && (!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q))));
@@ -726,10 +738,9 @@ function kcard(l){
      <div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="hd">${esc(l.loc)} · ${esc(l.time)}</div></div>
      ${scpill2(l.score)}</div>
    <div class="snip">${esc(l.lastMessage)||'<span class="muted">No messages</span>'}</div>
-   <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
-  c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging');
-    clearInterval(window.__dragTimer); window.__dragTimer=setInterval(()=>{const b=document.getElementById('board');if(b&&b.__autoscroll)b.__autoscroll();},16);});
-  c.addEventListener('dragend',()=>{c.classList.remove('dragging');clearInterval(window.__dragTimer);});
+   <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(needsEff(l)?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
+  c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging');startDragScroll();});
+  c.addEventListener('dragend',()=>{c.classList.remove('dragging');stopDragScroll();});
   c.addEventListener('click',()=>openLeadMenu(l.id));  // open the lead action card
   return c;
 }
@@ -1014,7 +1025,7 @@ async function sendJake(){
 let rtTimer=null, rtOn=false, lastSig='';
 // Cheap signature of what's actually visible — so a background refresh only redraws
 // when something really changed (stage, score, new message, unread), never on a no-op.
-function leadsSig(){ let s=LEADS.length+'|'; for(const l of LEADS) s+=l.id+(l.stageId||'')+l.score+l.lastMs+(unreadEff(l)?'1':'0')+(l.needs?'1':'0')+';'; return s; }
+function leadsSig(){ let s=LEADS.length+'|'; for(const l of LEADS) s+=l.id+(l.stageId||'')+l.score+l.lastMs+(unreadEff(l)?'1':'0')+(needsEff(l)?'1':'0')+';'; return s; }
 // Apply fresh data WITHOUT knocking the user off: skip redraw if nothing changed,
 // and preserve scroll position (vertical + the pipeline's horizontal scroll) when it does.
 function applyRefresh(){

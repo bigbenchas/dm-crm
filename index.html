@@ -393,13 +393,14 @@ function scpill2(score){const col=scColor(score);return `<span class="scpill" st
 
 /* ---------------- DASHBOARD ---------------- */
 function vDashboard(v){
-  const hot=[...LEADS].sort((a,b)=>b.score-a.score).slice(0,5);
-  const booked=LEADS.filter(l=>l.group==='booked'||l.booked);
-  const clients=LEADS.filter(l=>l.group==='won');
-  const needs=LEADS.filter(l=>l.needs);
-  const avg=LEADS.length?Math.round(LEADS.reduce((a,b)=>a+b.score,0)/LEADS.length):0;
+  const prospects=LEADS.filter(l=>!isClient(l));
+  const clients=LEADS.filter(isClient);
+  const hot=[...prospects].sort((a,b)=>b.score-a.score).slice(0,5);
+  const booked=prospects.filter(l=>l.group==='booked'||l.booked);
+  const needs=prospects.filter(l=>l.needs);
+  const avg=prospects.length?Math.round(prospects.reduce((a,b)=>a+b.score,0)/prospects.length):0;
   const kpis=[
-   ['Active leads',LEADS.length+'',(LIVE?'live from HighLevel':'demo data'),'flat'],
+   ['Active leads',prospects.length+'',(LIVE?'live from HighLevel':'demo data'),'flat'],
    ['Needs reply',needs.length+'',needs.length?'inbound waiting':'all caught up',needs.length?'down':'up'],
    ['Calls booked',booked.length+'','in scheduled stages','flat'],
    ['Avg lead score',avg+'','qualified pool','up'],
@@ -432,12 +433,15 @@ function vDashboard(v){
    </div>`;
 }
 function stLabel(g){return {new:'New DM',convo:'In Convo',script:'Script',closer:'Closer',booked:'Booked',won:'Client',nurture:'Follow-up'}[g]||g}
+// Current clients (Current Athlete / won) are NOT active leads — exclude them from stats, scoring views, dashboard and the leads list (they still appear in the Pipeline mirror + the Clients KPI).
+function isClient(l){ return !!(l && (l.won || l.group==='won' || /current athlete/i.test(l.stageName||''))); }
 function emptyRow(){return `<div class="muted" style="padding:14px;font-size:12.5px">No leads loaded.</div>`}
 function dashInsights(){
-  const needs=LEADS.filter(l=>l.needs).length;
-  const hot=[...LEADS].sort((a,b)=>b.score-a.score)[0];
-  const booked=LEADS.filter(l=>l.group==='booked'||l.booked).length;
-  const cold=LEADS.filter(l=>l.score<38).length;
+  const P=LEADS.filter(l=>!isClient(l));
+  const needs=P.filter(l=>l.needs).length;
+  const hot=[...P].sort((a,b)=>b.score-a.score)[0];
+  const booked=P.filter(l=>l.group==='booked'||l.booked).length;
+  const cold=P.filter(l=>l.score<38).length;
   const rows=[];
   if(needs) rows.push(['rgba(245,165,36,.15)','⚠️',`${needs} leads need a reply`,`These DMs have an inbound message waiting on you — answer the warm ones first.`]);
   if(hot) rows.push(['rgba(34,197,94,.15)','✅',`Hottest: ${esc(hot.name)} (${hot.score})`,esc(hot.coach||'Top of your list — push them today.')]);
@@ -726,7 +730,7 @@ async function removeLead(id){
 /* ---------------- LEADS table ---------------- */
 function vLeads(v){
   const q=gq();
-  let rows=LEADS.filter(l=>!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q)));
+  let rows=LEADS.filter(l=>!isClient(l)).filter(l=>!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q)));
   rows.sort((a,b)=> leadSort==='score'?b.score-a.score : leadSort==='name'?a.name.localeCompare(b.name) : 0);
   v.innerHTML=`<div class="panel-card" style="padding:6px 6px 4px">
    <table><thead><tr>
@@ -749,18 +753,19 @@ function setSort(s){leadSort=s;render()}
 
 /* ---------------- ANALYTICS ---------------- */
 function vAnalytics(v){
-  const total=LEADS.length||1;
-  const replied=LEADS.filter(l=>l.lastDir==='inbound'||l.needs).length;
-  const scriptp=LEADS.filter(l=>['script','closer','booked','won'].includes(l.group)).length;
-  const closer=LEADS.filter(l=>['closer','booked','won'].includes(l.group)).length;
-  const booked=LEADS.filter(l=>l.group==='booked'||l.booked).length;
-  const won=LEADS.filter(l=>l.group==='won').length;
-  const funnel=[['In set',total],['Replied',replied],['Script+',scriptp],['With closer',closer],['Calls booked',booked],['Clients',won]];
+  const P=LEADS.filter(l=>!isClient(l));            // active prospects only
+  const total=P.length||1;
+  const replied=P.filter(l=>l.lastDir==='inbound'||l.needs).length;
+  const scriptp=P.filter(l=>['script','closer','booked'].includes(l.group)).length;
+  const closer=P.filter(l=>['closer','booked'].includes(l.group)).length;
+  const booked=P.filter(l=>l.group==='booked'||l.booked).length;
+  const won=LEADS.filter(isClient).length;          // clients = funnel endpoint
+  const funnel=[['Active leads',total],['Replied',replied],['Script+',scriptp],['With closer',closer],['Calls booked',booked],['Clients',won]];
   const max=total;
-  const dist=[['Hot (80+)',LEADS.filter(l=>l.score>=80).length,'var(--hot)'],['Warm (58-79)',LEADS.filter(l=>l.score>=58&&l.score<80).length,'var(--warm)'],
-    ['Cool (38-57)',LEADS.filter(l=>l.score>=38&&l.score<58).length,'var(--cool)'],['Cold (<38)',LEADS.filter(l=>l.score<38).length,'var(--cold)']];
+  const dist=[['Hot (80+)',P.filter(l=>l.score>=80).length,'var(--hot)'],['Warm (58-79)',P.filter(l=>l.score>=58&&l.score<80).length,'var(--warm)'],
+    ['Cool (38-57)',P.filter(l=>l.score>=38&&l.score<58).length,'var(--cool)'],['Cold (<38)',P.filter(l=>l.score<38).length,'var(--cold)']];
   const dmax=Math.max(...dist.map(d=>d[1]),1);
-  const ig=LEADS.filter(l=>l.plat==='ig').length, fb=LEADS.filter(l=>l.plat==='fb').length;
+  const ig=P.filter(l=>l.plat==='ig').length, fb=P.filter(l=>l.plat==='fb').length;
   v.innerHTML=`
    <div class="grid" style="grid-template-columns:1.4fr 1fr">
      <div class="panel-card">
@@ -778,7 +783,7 @@ function vAnalytics(v){
      </div>
    </div>
    <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
-     ${[['Reply rate',Math.round(replied/total*100)+'%','of current set','flat'],['Reply → booked',replied?Math.round(booked/replied*100)+'%':'0%','of responders','flat'],['Booked → client',booked?Math.round(won/booked*100)+'%':'0%','show + close','flat'],['Avg score',LEADS.length?Math.round(LEADS.reduce((a,b)=>a+b.score,0)/LEADS.length):0,'qualified pool','flat']]
+     ${[['Reply rate',Math.round(replied/total*100)+'%','of current set','flat'],['Reply → booked',replied?Math.round(booked/replied*100)+'%':'0%','of responders','flat'],['Booked → client',booked?Math.round(won/booked*100)+'%':'0%','show + close','flat'],['Avg score',P.length?Math.round(P.reduce((a,b)=>a+b.score,0)/P.length):0,'qualified pool','flat']]
        .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
    </div>`;
 }

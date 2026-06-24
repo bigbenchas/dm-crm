@@ -476,6 +476,16 @@ let FOLLOW={}; try{ FOLLOW=JSON.parse(localStorage.getItem('bb_follow')||'{}'); 
 function saveFollow(){ try{ localStorage.setItem('bb_follow',JSON.stringify(FOLLOW)); }catch(e){} }
 async function loadFollowMap(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_followup').select('contact_id,remind_at'); FOLLOW={}; (data||[]).forEach(r=>{ const ms=Number(r.remind_at)||0; if(ms>0) FOLLOW[r.contact_id]=ms; }); saveFollow(); }catch(e){} }
 async function pushFollow(contactId, ms){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(ms){ await sb.from('crm_followup').upsert({contact_id:contactId,remind_at:ms,updated_at:new Date().toISOString()}); } else { await sb.from('crm_followup').delete().eq('contact_id',contactId); } }catch(e){} }
+// Call outcomes (show / no-show) — shared Supabase store crm_appt, so set→show→close math is durable.
+let APPT={}; try{ APPT=JSON.parse(localStorage.getItem('bb_appt')||'{}'); }catch(e){ APPT={}; }
+function saveAppt(){ try{ localStorage.setItem('bb_appt',JSON.stringify(APPT)); }catch(e){} }
+async function loadApptMap(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_appt').select('contact_id,outcome,ts'); APPT={}; (data||[]).forEach(r=>{ if(r.outcome) APPT[r.contact_id]={outcome:r.outcome,ts:Number(r.ts)||0}; }); saveAppt(); }catch(e){} }
+async function pushAppt(contactId, outcome){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(outcome){ await sb.from('crm_appt').upsert({contact_id:contactId,outcome,ts:Date.now(),updated_at:new Date().toISOString()}); } else { await sb.from('crm_appt').delete().eq('contact_id',contactId); } }catch(e){} }
+function apptOf(l){ return (APPT[l.id]||{}).outcome||''; }
+function setAppt(id, outcome){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=apptOf(l)===outcome?'':outcome; if(nv) APPT[id]={outcome:nv,ts:Date.now()}; else delete APPT[id]; saveAppt(); pushAppt(l.contactId,nv);
+  toast((nv==='showed'?'Marked showed · ':nv==='noshow'?'Marked no-show · ':'Outcome cleared · ')+l.name); refreshToday();
+  const el=document.getElementById('lmAppt'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadAppt(ll); } }
+function showStats(){ const booked=LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)); let showed=0,noshow=0; booked.forEach(l=>{const o=apptOf(l); if(o==='showed')showed++; else if(o==='noshow')noshow++;}); const rate=(showed+noshow)?Math.round(showed/(showed+noshow)*100):null; return {booked:booked.length,showed,noshow,rate}; }
 const NOW=()=>Date.now();
 function hoursSince(l){ return l.lastMs? (NOW()-l.lastMs)/3.6e6 : 9999; }
 function isSnoozed(l){ const m=FOLLOW[l.id]; return !!(m && m>NOW()); }
@@ -497,7 +507,7 @@ function renderLeadFollow(l){
 function qReplyNow(){ return LEADS.filter(l=>!isClient(l)&&needsEff(l)&&!isSnoozed(l)).sort((a,b)=>b.score-a.score); }
 function qDue(){ return LEADS.filter(l=>!isClient(l)&&isDue(l)).sort((a,b)=>(FOLLOW[a.id]||0)-(FOLLOW[b.id]||0)); }
 function qCold(){ return LEADS.filter(l=>!isClient(l)&&l.inPipeline&&l.status==='open'&&l.lastDir==='outbound'&&!needsEff(l)&&!isSnoozed(l)&&!isDue(l)&&hoursSince(l)>=48&&hoursSince(l)<24*45).sort((a,b)=>b.score-a.score); }
-function qConfirm(){ return LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)&&!isSnoozed(l)).sort((a,b)=>b.score-a.score); }
+function qConfirm(){ return LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)&&!isSnoozed(l)&&!apptOf(l)).sort((a,b)=>b.score-a.score); }
 function todayCount(){ return qReplyNow().length + qDue().length; }   // the must-act-now items drive the badge
 function snoozeMenu(id){ return `<span class="snz"><button class="btn xs" onclick="event.stopPropagation();toggleSnz('${id}')">⏰ Snooze ▾</button><span class="snz-pop" id="snz_${id}" style="display:none"><button onclick="snooze('${id}',1)">Tomorrow</button><button onclick="snooze('${id}',3)">In 3 days</button><button onclick="snooze('${id}',7)">In 1 week</button></span></span>`; }
 function toggleSnz(id){ document.querySelectorAll('.snz-pop').forEach(p=>{ if(p.id!=='snz_'+id)p.style.display='none'; }); const p=document.getElementById('snz_'+id); if(p)p.style.display=p.style.display==='none'?'inline-flex':'none'; }
@@ -525,8 +535,9 @@ function vToday(v){
         `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`),'')}
    ${tSection('Going cold','📉',cold,l=>tItem(l,'You replied '+esc(l.time)+' ago, no response','#f87171',
         `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Nudge</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();clearFollow('${l.id}');snooze('${l.id}',7)">Later</button>`),'')}
+   ${(()=>{const st=showStats();return st.showed+st.noshow>0?`<div class="muted" style="font-size:11.5px;margin:0 2px 12px">📊 Calls: ${st.booked} booked · ${st.showed} showed · ${st.noshow} no-show${st.rate!=null?' · <b style="color:#9be8c0">'+st.rate+'% show rate</b>':''}</div>`:'';})()}
    ${tSection('Confirm booked calls','📅',confirm,l=>tItem(l,esc(l.stageName||'Booked'),'#4ade80',
-        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}`),'')}`;
+        `<button class="btn xs" onclick="event.stopPropagation();setAppt('${l.id}','showed')">✓ Showed</button><button class="btn xs" onclick="event.stopPropagation();setAppt('${l.id}','noshow')">✗ No-show</button><button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>`),'')}`;
 }
 document.addEventListener('click',e=>{ if(!e.target.closest('.snz')) document.querySelectorAll('.snz-pop').forEach(p=>p.style.display='none'); });
 
@@ -862,6 +873,7 @@ function renderLeadMenu(){
       ${quick?`<div class="lm-stages" style="margin-bottom:9px">${quick}</div>`:''}
       <div style="display:flex;gap:6px"><input id="lmTag" class="inp" placeholder="add a custom tag…" style="flex:1;padding:7px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addLeadTagInput('${l.id}')"><button class="btn sm" onclick="addLeadTagInput('${l.id}')">Add</button></div>
     </div>
+    <div id="lmAppt"></div>
     <div class="sec" style="padding:10px 0 4px"><h4>Follow-up</h4><div id="lmFollow"></div></div>
     <div class="sec" style="padding:10px 0 4px"><h4>Notes</h4>
       <div id="lmNotes" style="max-height:160px;overflow:auto;margin-bottom:8px"></div>
@@ -877,6 +889,16 @@ function renderLeadMenu(){
   </div>`;
   renderLeadNotes(l);   // notes persist on the lead object, so they survive re-renders (tag edits etc.)
   renderLeadFollow(l);
+  renderLeadAppt(l);
+}
+function renderLeadAppt(l){
+  const el=document.getElementById('lmAppt'); if(!el)return;
+  if(!(l.group==='booked'||l.booked||isClient(l))){ el.innerHTML=''; return; }   // only for booked/clients
+  const o=apptOf(l);
+  el.innerHTML=`<div class="sec" style="padding:10px 0 4px"><h4>Call outcome</h4><div style="display:flex;gap:6px">
+    <button class="btn xs" style="${o==='showed'?'background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4);color:#9be8c0':''}" onclick="setAppt('${l.id}','showed')">✓ Showed</button>
+    <button class="btn xs" style="${o==='noshow'?'background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.4);color:#f87171':''}" onclick="setAppt('${l.id}','noshow')">✗ No-show</button>
+  </div></div>`;
 }
 // ---- Account notes (synced to HighLevel) ----
 function renderLeadNotes(l){
@@ -1143,6 +1165,7 @@ async function startRealtime(){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'crm_signal'},()=>{window.__rtPings=(window.__rtPings||0)+1;refreshSoon();})
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_read'},()=>{ loadReadMap().then(()=>{ renderNav(); if(cur==='inbox')renderIList(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_followup'},()=>{ loadFollowMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'crm_appt'},()=>{ loadApptMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
       .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
   }catch(e){ window.__rtStatus='error'; }
 }
@@ -1191,11 +1214,11 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
-  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
+  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

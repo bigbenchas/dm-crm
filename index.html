@@ -296,6 +296,8 @@ function normalizeLead(l,i){
   l.lastMessage = l.lastMessage || (l.msgs && l.msgs.length ? l.msgs[l.msgs.length-1].t : '');
   l.stageName = l.stageName || (l.stageId ? (stageById(l.stageId)?.name||'') : '');
   l.group = l.group || (l.booked ? (l.won?'won':'booked') : stageGroup(l.stageName));
+  l.inPipeline = (l.inPipeline ?? !!l.opportunityId);   // in the DM's pipeline (Pipeline/Leads/stats)
+  l.hasConv = (l.hasConv ?? !!(l.lastMessage || l.lastDir));  // has a HL conversation (Inbox)
   l.coach = l.coach || '';
   // factors -> tuples [label,pts,max] (backend sends objects)
   l.factors = (l.factors||[]).map(f=>Array.isArray(f)?f:[f.label,f.pts,f.max]);
@@ -393,7 +395,7 @@ function scpill2(score){const col=scColor(score);return `<span class="scpill" st
 
 /* ---------------- DASHBOARD ---------------- */
 function vDashboard(v){
-  const prospects=LEADS.filter(l=>!isClient(l));
+  const prospects=LEADS.filter(isProspect);
   const clients=LEADS.filter(isClient);
   const hot=[...prospects].sort((a,b)=>b.score-a.score).slice(0,5);
   const booked=prospects.filter(l=>l.group==='booked'||l.booked);
@@ -435,9 +437,11 @@ function vDashboard(v){
 function stLabel(g){return {new:'New DM',convo:'In Convo',script:'Script',closer:'Closer',booked:'Booked',won:'Client',nurture:'Follow-up'}[g]||g}
 // Current clients (Current Athlete / won) are NOT active leads — exclude them from stats, scoring views, dashboard and the leads list (they still appear in the Pipeline mirror + the Clients KPI).
 function isClient(l){ return !!(l && (l.won || l.group==='won' || /current athlete/i.test(l.stageName||''))); }
+// Active prospect = in the DM's pipeline and not yet a client. Drives all lead stats/scoring views.
+function isProspect(l){ return !!(l && l.inPipeline && !isClient(l)); }
 function emptyRow(){return `<div class="muted" style="padding:14px;font-size:12.5px">No leads loaded.</div>`}
 function dashInsights(){
-  const P=LEADS.filter(l=>!isClient(l));
+  const P=LEADS.filter(isProspect);
   const needs=P.filter(l=>l.needs).length;
   const hot=[...P].sort((a,b)=>b.score-a.score)[0];
   const booked=P.filter(l=>l.group==='booked'||l.booked).length;
@@ -458,13 +462,14 @@ function vInbox(v){
     <div class="ictx" id="ictx"></div>
   </div>`;
   renderITabs();renderIList();
-  const start = LEADS.find(l=>l.id===activeId)?activeId:(LEADS[0]&&LEADS[0].id);
+  const start = (LEADS.find(l=>l.id===activeId && l.hasConv) || LEADS.find(l=>l.hasConv) || {}).id;
   if(start) openConvo(start);
 }
 const ITABS=[['all','All'],['unread','Unread'],['needs','Needs reply'],['booked','Booked']];
 function renderITabs(){document.getElementById('itabs').innerHTML=ITABS.map(t=>`<div class="itab ${t[0]===iTab?'active':''}" onclick="setITab('${t[0]}')">${t[1]}</div>`).join('')}
 function setITab(t){iTab=t;renderIList()}
 function iFiltered(){const q=gq();return LEADS.filter(l=>{
+  if(!l.hasConv)return false;   // Inbox mirrors HighLevel conversations (everyone with DM activity)
   if(iTab==='unread'&&!l.unread)return false;if(iTab==='needs'&&!l.needs)return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
   if(q&&!((l.name+' '+l.loc+' '+l.tags.join(' ')+' '+(l.lastMessage||'')).toLowerCase().includes(q)))return false;return true;})}
 function renderIList(){
@@ -730,7 +735,7 @@ async function removeLead(id){
 /* ---------------- LEADS table ---------------- */
 function vLeads(v){
   const q=gq();
-  let rows=LEADS.filter(l=>!isClient(l)).filter(l=>!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q)));
+  let rows=LEADS.filter(isProspect).filter(l=>!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q)));
   rows.sort((a,b)=> leadSort==='score'?b.score-a.score : leadSort==='name'?a.name.localeCompare(b.name) : 0);
   v.innerHTML=`<div class="panel-card" style="padding:6px 6px 4px">
    <table><thead><tr>
@@ -753,7 +758,7 @@ function setSort(s){leadSort=s;render()}
 
 /* ---------------- ANALYTICS ---------------- */
 function vAnalytics(v){
-  const P=LEADS.filter(l=>!isClient(l));            // active prospects only
+  const P=LEADS.filter(isProspect);                 // active prospects only
   const total=P.length||1;
   const replied=P.filter(l=>l.lastDir==='inbound'||l.needs).length;
   const scriptp=P.filter(l=>['script','closer','booked'].includes(l.group)).length;

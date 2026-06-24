@@ -677,7 +677,7 @@ function vPipeline(v){
   board.__autoscroll=()=>{ const r=board.getBoundingClientRect(); const x=window.__dragX||0; const edge=90;
     if(x>r.right-edge) board.scrollLeft+=26; else if(x<r.left+edge && x>0) board.scrollLeft-=26; };
   cols.forEach(cdef=>{
-    const col=document.createElement('div');col.className='col';col.style.setProperty('--c',cdef.color);
+    const col=document.createElement('div');col.className='col';col.style.setProperty('--c',cdef.color);col.dataset.key=cdef.key;
     const inSt=LEADS.filter(l=>cdef.match(l) && (!q||((l.name+' '+l.loc+' '+l.tags.join(' ')).toLowerCase().includes(q))));
     col.innerHTML=`<div class="col-head"><div class="col-title"><span class="cdot"></span><h3>${esc(cdef.name)}</h3><span class="count">${inSt.length}</span></div></div><div class="cards"></div>`;
     const cards=col.querySelector('.cards');
@@ -690,15 +690,28 @@ function vPipeline(v){
     board.appendChild(col);
   });
 }
+// Slide ONE card into its new column in place (no full board rebuild) — clean, no flash, no scroll jump.
+// Returns false if the card/column isn't in the DOM right now, so callers fall back to a full render.
+function moveCardClean(l, key){
+  const board=document.getElementById('board'); if(!board) return false;
+  const card=board.querySelector('.kcard[data-id="'+l.id+'"]');
+  const targetCards=board.querySelector('.col[data-key="'+key+'"] .cards');
+  if(!card||!targetCards) return false;
+  const srcCol=card.closest('.col');
+  const sc=+(card.dataset.score||0);
+  let placed=false;
+  for(const k of targetCards.querySelectorAll('.kcard')){ if(+(k.dataset.score||0) < sc){ targetCards.insertBefore(card,k); placed=true; break; } }
+  if(!placed) targetCards.appendChild(card);
+  [srcCol, targetCards.closest('.col')].forEach(c=>{ if(!c)return; const n=c.querySelectorAll('.cards .kcard').length; const b=c.querySelector('.count'); if(b)b.textContent=n; });
+  return true;
+}
 async function moveLeadToColumn(l,cdef){
   const fromName=l.stageName||stLabel(l.group);
   if(cdef.stageId){
     if(l.stageId===cdef.stageId)return;
     l.stageId=cdef.stageId;l.stageName=cdef.name;l.group=stageGroup(cdef.name);l.booked=l.group==='booked'||l.group==='won';
   }else{ if(l.group===cdef.key)return; l.group=cdef.key; }
-  const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0;
-  render();
-  const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left;   // keep the board where it was, don't jump to the start
+  if(!(cur==='pipeline' && moveCardClean(l,cdef.key))){ const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0; render(); const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left; }
   lastSig=leadsSig();   // we already reflected this change, so the next poll won't re-render over it
   if(LIVE && l.opportunityId && cdef.stageId){
     try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:cdef.stageId});
@@ -708,7 +721,7 @@ async function moveLeadToColumn(l,cdef){
   else { toast(`${l.name}: ${fromName} → ${cdef.name} (demo)`); }
 }
 function kcard(l){
-  const c=document.createElement('div');c.className='kcard';c.draggable=true;
+  const c=document.createElement('div');c.className='kcard';c.draggable=true;c.dataset.id=l.id;c.dataset.score=l.score;
   c.innerHTML=`<div class="top"><div class="ava" style="width:34px;height:34px;font-size:12px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
      <div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="hd">${esc(l.loc)} · ${esc(l.time)}</div></div>
      ${scpill2(l.score)}</div>
@@ -803,7 +816,7 @@ async function jumpStage(id,stageId){
   const from=l.stageName||stLabel(l.group);
   l.stageId=s.id; l.stageName=s.name; l.group=stageGroup(s.name); l.booked=l.group==='booked'||l.group==='won';
   closeLeadMenu();
-  if(cur==='pipeline'){ const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0; render(); const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left; lastSig=leadsSig(); }
+  if(cur==='pipeline'){ if(!moveCardClean(l,s.id)){ const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0; render(); const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left; } lastSig=leadsSig(); }
   if(LIVE&&l.opportunityId){ try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:s.id}); if(res&&res.ok!==false)toast(`${l.name}: ${from} → ${s.name}`); else toastErr(`Move failed · ${l.name}`);}catch(e){toastErr(`Move failed · ${l.name}`);} }
   else if(LIVE&&!l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
 }

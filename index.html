@@ -480,6 +480,7 @@ function renderIList(){
 async function openConvo(id){
   activeId=id;const l=LEADS.find(x=>x.id===id);if(!l)return;
   l.unread=false;renderNav();renderIList();renderThread(l);renderICtx(l);
+  if(LIVE) fetchSuggestions(l);   // Jake drafts a reply from the playbook + live thread
   if(LIVE && !l.msgs){
     try{
       const r=await authGet(`?action=messages&contactId=${encodeURIComponent(l.contactId)}`);
@@ -509,8 +510,6 @@ function renderThread(l){
       return `<div class="m ${m.who}"><div class="who">${who}</div><div class="bub">${t}</div><div class="mtime">${esc(m.time||'')}</div></div>`}).join('')
       : `<div class="muted" style="margin:auto;font-size:12.5px">${l.lastMessage?('Last: '+esc(l.lastMessage)):'No message history available.'}</div>`;
   }
-  const sug=suggestions(l).map((s,i)=>`<div class="schip" onclick="useSug(${i})" title="${esc(s).replace(/"/g,'&quot;')}">✨ ${esc(s)}</div>`).join('');
-  l._sug=suggestions(l);
   th.innerHTML=`
    <div class="t-head">
      <div class="ava" style="width:40px;height:40px;border-radius:11px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}</div>
@@ -522,10 +521,33 @@ function renderThread(l){
    </div>
    <div class="msgs" id="msgs">${msgsHtml}</div>
    <div class="composer">
-     <div class="sugg"><span class="lbl">AI suggests:</span>${sug}</div>
+     <div class="sugg" id="sugbar"></div>
      <div class="cbox"><textarea id="reply" rows="1" placeholder="Message ${esc(l.name.split(' ')[0])}…" oninput="grow(this)"></textarea><button class="send" onclick="sendReply()">➤</button></div>
    </div>`;
   const m=document.getElementById('msgs');if(m)m.scrollTop=m.scrollHeight;
+  renderSugBar(l);
+}
+// Render Jake's suggested replies (drafted server-side from the playbook + live thread).
+function renderSugBar(l){
+  const bar=document.getElementById('sugbar'); if(!bar||activeId!==l.id) return;
+  const j=l._jake;
+  if(j===undefined){ bar.innerHTML=`<span class="lbl">✨ Jake is drafting…</span>`; return; }
+  if(j&&j.needsKey){ bar.innerHTML=`<span class="lbl" style="color:#f7c065">Jake needs an Anthropic key (Settings → add ANTHROPIC_API_KEY)</span>`; return; }
+  if(j&&j.mode==='personal'){ bar.innerHTML=`<span class="lbl" style="color:#f87171">⚠ Looks personal — ${esc(j.note||'handle this one yourself')}</span>`; return; }
+  const sugs=(j&&j.suggestions)||[];
+  const note = j&&j.note ? `<div style="font-size:10.5px;color:${j.mode==='transition'?'#9be8c0':'var(--muted)'};width:100%;margin-bottom:2px">${j.mode==='transition'?'🤝 ':''}${esc(j.note)}</div>` : '';
+  const chips = sugs.map((s,i)=>`<div class="schip" onclick="useSug(${i})" title="${esc(s).replace(/"/g,'&quot;')}">✨ ${esc(s)}</div>`).join('');
+  bar.innerHTML = note + `<span class="lbl">Jake suggests:</span>` + (chips || `<span class="muted" style="font-size:11.5px">No draft — write your own.</span>`)
+    + (j&&j.mode==='transition'?`<button class="schip" style="color:#9be8c0;border-color:rgba(34,197,94,.35)" onclick="quickTag()">🎯 then Tag closer</button>`:'');
+}
+async function fetchSuggestions(l){
+  l._jake=undefined; renderSugBar(l);
+  try{
+    const r=await post({action:'suggest',contactId:l.contactId,name:(l.name||'').split(' ')[0]});
+    l._jake = r && (r.suggestions||r.needsKey||r.mode) ? r : {mode:'warmup',note:'',suggestions:suggestions(l)};
+    if(l._jake && !l._jake.needsKey && (!l._jake.suggestions||!l._jake.suggestions.length) && l._jake.mode!=='personal') l._jake.suggestions=suggestions(l);
+  }catch(e){ l._jake={mode:'warmup',note:'',suggestions:suggestions(l)}; }
+  renderSugBar(l);
 }
 function renderICtx(l){
   const ctx=document.getElementById('ictx');if(!ctx)return;
@@ -545,7 +567,7 @@ function renderICtx(l){
 }
 function curLead(){return LEADS.find(l=>l.id===activeId)}
 function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
-function useSug(i){const l=curLead();const r=document.getElementById('reply');r.value=(l._sug||suggestions(l))[i];grow(r);r.focus()}
+function useSug(i){const l=curLead();const arr=(l._jake&&l._jake.suggestions&&l._jake.suggestions.length?l._jake.suggestions:suggestions(l));const r=document.getElementById('reply');r.value=arr[i]||'';grow(r);r.focus()}
 async function sendReply(){
   const r=document.getElementById('reply');const val=r.value.trim();if(!val)return;
   const l=curLead();
@@ -778,8 +800,17 @@ function vSettings(v){
       <div class="kv" style="margin-top:10px"><span class="k">Hot threshold</span><span class="v">80+</span></div>
       <div class="kv"><span class="k">Auto-route region</span><span class="v">India → Foundations</span></div>
       <div class="kv"><span class="k">Booked stages</span><span class="v">→ score boost</span></div>
-    </div></div>`;
+    </div></div>
+    <div class="panel-card" style="margin-top:16px">
+      <div class="ph"><span>🤖</span><h3>Jake playbook</h3><span class="muted" style="margin-left:auto;font-size:11px">drives suggested replies + the Ask Jake assistant</span></div>
+      <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Jake's voice and flow — commas only, the conversation arc, the exact transition line, the hard rules. Edit and save to change how every suggested reply is written. (Your HighLevel token is never stored here.)</p>
+      <textarea id="jakePb" class="inp" style="height:300px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.55;resize:vertical" placeholder="Loading playbook…"></textarea>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn primary sm" onclick="savePlaybook()">Save playbook</button><span id="pbStatus" class="muted" style="font-size:11px"></span></div>
+    </div>`;
+  loadPlaybook();
 }
+async function loadPlaybook(){ try{const r=await authGet('?action=getconfig');const j=await r.json();const t=document.getElementById('jakePb');if(t)t.value=j.playbook||'';}catch(e){} }
+async function savePlaybook(){ const t=document.getElementById('jakePb'),s=document.getElementById('pbStatus'); if(!t)return; s.textContent='Saving…'; try{const r=await post({action:'setconfig',playbook:t.value}); s.textContent=(r&&r.ok!==false)?'Saved ✓ — new suggestions use this now':'Save failed'; setTimeout(()=>{if(s)s.textContent='';},3000);}catch(e){s.textContent='Save failed';} }
 async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
 
 /* ---------------- JAKE (AI assistant) ---------------- */

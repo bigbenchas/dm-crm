@@ -495,7 +495,9 @@ function renderIFilter(){
 function setIFilter(v){ iFilter=v; renderIList(); }
 function setITab(t){iTab=t;renderITabs();renderIList()}   // re-render tabs so the clicked one highlights
 function iFiltered(){const q=gq();return LEADS.filter(l=>{
-  if(!l.hasConv)return false;   // Inbox mirrors HighLevel conversations (everyone with DM activity)
+  // No filter → mirror HighLevel conversations (people with DM activity).
+  // With a stage/tag filter → show EVERYONE matching it, incl. dormant/past leads with no recent DM.
+  if(!l.hasConv && !iFilter)return false;
   if(iTab==='unread'&&!unreadEff(l))return false;   // All shows everyone; Unread hides what you've read
   if(iFilter.startsWith('stage:')){ if(l.stageId!==iFilter.slice(6))return false; }
   else if(iFilter.startsWith('tag:')){ const t=iFilter.slice(4).toLowerCase(); if(!(l.tags||[]).some(x=>(x||'').toLowerCase()===t))return false; }

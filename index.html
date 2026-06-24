@@ -647,11 +647,10 @@ function kcard(l){
      <div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="hd">${esc(l.loc)} · ${esc(l.time)}</div></div>
      ${scpill2(l.score)}</div>
    <div class="snip">${esc(l.lastMessage)||'<span class="muted">No messages</span>'}</div>
-   <div class="foot"><span>🕐 ${esc(l.time)}</span><span style="display:flex;align-items:center;gap:8px">${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}<button class="kmore" title="Move or remove">⋯</button></span></div>`;
+   <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(l.needs?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
   c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging')});
   c.addEventListener('dragend',()=>c.classList.remove('dragging'));
-  c.addEventListener('click',()=>openLead(l.id));  // open the conversation
-  c.querySelector('.kmore').addEventListener('click',e=>{e.stopPropagation();openLeadMenu(l.id);});  // move / remove
+  c.addEventListener('click',()=>openLeadMenu(l.id));  // open the lead action card
   return c;
 }
 
@@ -664,6 +663,12 @@ function renderLeadMenu(){
   let b=document.getElementById('lmBack');
   if(!b){ b=document.createElement('div'); b.id='lmBack'; b.className='lm-back'; b.addEventListener('click',e=>{if(e.target===b)closeLeadMenu();}); document.body.appendChild(b); }
   const stageBtns=STAGES.map(s=>`<button class="lm-stage ${s.id===l.stageId?'cur':''}" ${s.id===l.stageId?'disabled':''} onclick="jumpStage('${l.id}','${s.id}')">${esc(s.name)}</button>`).join('');
+  const curTags=l.tags||[];
+  const tagChips=curTags.length
+    ? curTags.map((t,i)=>`<span class="ctag" style="display:inline-flex;align-items:center;gap:6px">${esc(t)}<span onclick="removeLeadTagAt('${l.id}',${i})" title="remove" style="cursor:pointer;color:var(--muted2);font-weight:700">✕</span></span>`).join('')
+    : '<span class="muted" style="font-size:11.5px">No tags yet</span>';
+  const quick=LM_QUICKTAGS.filter(t=>!curTags.map(x=>x.toLowerCase()).includes(t.toLowerCase()))
+    .map(t=>`<button class="lm-stage" style="${t==='closer'?'color:#9be8c0;border-color:rgba(34,197,94,.35)':''}" onclick="addLeadTag('${l.id}','${t}')">+ ${t==='closer'?'🎯 closer':esc(t)}</button>`).join('');
   b.innerHTML=`<div class="lm-card" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
       <div class="ava" style="width:44px;height:44px;border-radius:12px;font-size:15px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
@@ -671,16 +676,34 @@ function renderLeadMenu(){
       ${scpill2(l.score)}
       <button class="lm-x" onclick="closeLeadMenu()">✕</button>
     </div>
-    <div class="sec" style="border:none;padding:10px 0 4px"><h4>Move to stage</h4><div class="lm-stages">${stageBtns}</div></div>
+    <div class="sec" style="border:none;padding:8px 0 4px"><h4>Move to stage</h4><div class="lm-stages">${stageBtns}</div></div>
+    <div class="sec" style="padding:10px 0 4px"><h4>Tags</h4>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">${tagChips}</div>
+      ${quick?`<div class="lm-stages" style="margin-bottom:9px">${quick}</div>`:''}
+      <div style="display:flex;gap:6px"><input id="lmTag" class="inp" placeholder="add a custom tag…" style="flex:1;padding:7px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addLeadTagInput('${l.id}')"><button class="btn sm" onclick="addLeadTagInput('${l.id}')">Add</button></div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" style="flex:1;justify-content:center" onclick="tagCloser('${l.id}')" title="Hand to Appointwise DM Closer">🎯 Tag closer</button>
-      <button class="btn" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
+      <button class="btn primary" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
       ${lmConfirm
         ? `<button class="btn" style="flex:1;justify-content:center;background:#b91c1c;border-color:#b91c1c;color:#fff" onclick="removeLead('${l.id}')">Confirm remove</button>`
         : `<button class="btn" style="flex:1;justify-content:center;color:#f87171;border-color:rgba(248,113,113,.35)" onclick="lmConfirm=true;renderLeadMenu()">🗑 Remove from pipeline</button>`}
     </div>
-    ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept.</div>`:''}
+    ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept. To make them a client, use Move to stage → Current Athlete instead.</div>`:''}
   </div>`;
+}
+const LM_QUICKTAGS=['closer','serious','hot','has coach','foundations','not interested'];
+async function addLeadTag(id,tag){
+  const l=LEADS.find(x=>x.id===id); if(!l)return; tag=String(tag||'').trim(); if(!tag)return;
+  if(!l.tags) l.tags=[];
+  if(!l.tags.map(t=>t.toLowerCase()).includes(tag.toLowerCase())) l.tags.push(tag);
+  renderLeadMenu();
+  if(LIVE&&l.contactId){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false) toast((tag.toLowerCase()==='closer'?'Tagged for Appointwise closer · ':'Tagged "'+tag+'" · ')+l.name); else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
+}
+function addLeadTagInput(id){ const i=document.getElementById('lmTag'); const v=(i?.value||'').trim(); if(v){ if(i)i.value=''; addLeadTag(id,v); } }
+async function removeLeadTagAt(id,idx){
+  const l=LEADS.find(x=>x.id===id); if(!l||!l.tags)return; const tag=l.tags[idx]; if(tag==null)return;
+  l.tags.splice(idx,1); renderLeadMenu();
+  if(LIVE&&l.contactId){ try{const r=await post({action:'tag',contactId:l.contactId,tag,remove:true}); if(!(r&&r.ok!==false)) toastErr('Remove tag failed · '+l.name);}catch(e){toastErr('Remove tag failed · '+l.name);} }
 }
 async function jumpStage(id,stageId){
   const l=LEADS.find(x=>x.id===id); const s=STAGES.find(x=>x.id===stageId); if(!l||!s)return;
@@ -710,7 +733,7 @@ function vLeads(v){
      <th onclick="setSort('name')">Lead</th><th>Platform</th><th>Stage</th>
      <th onclick="setSort('score')">AI Score ▾</th><th>Last message</th><th>Last activity</th><th>Tags</th>
    </tr></thead><tbody>
-   ${rows.map(l=>`<tr class="lrow" onclick="openLead('${l.id}')">
+   ${rows.map(l=>`<tr class="lrow" onclick="openLeadMenu('${l.id}')">
      <td><div style="display:flex;align-items:center;gap:10px"><div class="ava" style="width:34px;height:34px;font-size:12px;background:${avaColor(l.name)}">${initials(l.name)}</div>
        <div><div style="font-weight:700">${esc(l.name)}</div><div class="muted" style="font-size:11px">${esc(l.loc)}</div></div></div></td>
      <td>${l.plat==='ig'?'📷 Instagram':'📘 Facebook'}</td>

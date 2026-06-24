@@ -125,6 +125,9 @@
   .itabs{display:flex;gap:6px;padding:0 4px 10px;flex-wrap:wrap}
   .itab{font-size:11.5px;font-weight:600;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:5px 10px;border-radius:20px;cursor:pointer}
   .itab.active{background:var(--accent);border-color:transparent;color:#fff}
+  .ifilter{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--font);max-width:160px}
+  .ifilter:focus{outline:none;border-color:var(--accent)}
+  .ifilter option,.ifilter optgroup{background:#141923;color:var(--text)}
   .iconvos{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px}
   .crow{display:flex;gap:10px;padding:10px;border-radius:12px;cursor:pointer;transition:.12s}
   .crow:hover{background:var(--panel)}.crow.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
@@ -472,12 +475,30 @@ function vInbox(v){
   const start = (LEADS.find(l=>l.id===activeId && l.hasConv) || LEADS.find(l=>l.hasConv) || {}).id;
   if(start) openConvo(start);
 }
-const ITABS=[['all','All'],['unread','Unread'],['needs','Needs reply'],['booked','Booked']];
-function renderITabs(){document.getElementById('itabs').innerHTML=ITABS.map(t=>`<div class="itab ${t[0]===iTab?'active':''}" onclick="setITab('${t[0]}')">${t[1]}</div>`).join('')}
+const ITABS=[['all','All'],['unread','Unread']];   // just All + Unread; everything else is the filter dropdown
+let iFilter='';   // '' | 'stage:<id>' | 'tag:<name>'
+function renderITabs(){
+  if(!ITABS.some(t=>t[0]===iTab)) iTab='all';
+  const tabs=ITABS.map(t=>`<div class="itab ${t[0]===iTab?'active':''}" onclick="setITab('${t[0]}')">${t[1]}</div>`).join('');
+  document.getElementById('itabs').innerHTML=tabs+renderIFilter();
+}
+function renderIFilter(){
+  const stages=STAGES.map(s=>`<option value="stage:${esc(s.id)}" ${iFilter==='stage:'+s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  const tagSet=[...new Set(LEADS.filter(l=>l.hasConv).flatMap(l=>l.tags||[]))].sort((a,b)=>a.localeCompare(b));
+  const tags=tagSet.map(t=>`<option value="tag:${esc(t)}" ${iFilter==='tag:'+t?'selected':''}>${esc(t)}</option>`).join('');
+  return `<select id="ifilter" class="ifilter" onchange="setIFilter(this.value)" style="margin-left:auto">
+    <option value="">Filter: all</option>
+    <optgroup label="Pipeline stage">${stages}</optgroup>
+    ${tags?`<optgroup label="Tag">${tags}</optgroup>`:''}
+  </select>`;
+}
+function setIFilter(v){ iFilter=v; renderIList(); }
 function setITab(t){iTab=t;renderITabs();renderIList()}   // re-render tabs so the clicked one highlights
 function iFiltered(){const q=gq();return LEADS.filter(l=>{
   if(!l.hasConv)return false;   // Inbox mirrors HighLevel conversations (everyone with DM activity)
-  if(iTab==='unread'&&!unreadEff(l))return false;if(iTab==='needs'&&!needsEff(l))return false;if(iTab==='booked'&&!(l.group==='booked'||l.booked))return false;
+  if(iTab==='unread'&&!unreadEff(l))return false;   // All shows everyone; Unread hides what you've read
+  if(iFilter.startsWith('stage:')){ if(l.stageId!==iFilter.slice(6))return false; }
+  else if(iFilter.startsWith('tag:')){ const t=iFilter.slice(4).toLowerCase(); if(!(l.tags||[]).some(x=>(x||'').toLowerCase()===t))return false; }
   if(q&&!((l.name+' '+l.loc+' '+l.tags.join(' ')+' '+(l.lastMessage||'')).toLowerCase().includes(q)))return false;return true;})}
 // --- read state (persists in the browser so read items don't pop back on refresh; a NEW
 //     message (higher lastMs than when marked read) makes it unread again) + HL best-effort sync ---

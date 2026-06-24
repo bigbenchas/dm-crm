@@ -517,7 +517,7 @@ function renderThread(l){
      <div><div style="font-weight:700;font-size:15px">${esc(l.name)}</div><div class="muted" style="font-size:11.5px">${l.plat==='ig'?'Instagram':'Facebook'} · ${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
      <div style="margin-left:auto;display:flex;gap:8px">
        <button class="btn sm" onclick="quickBook()">📅 Send booking link</button>
-       <button class="btn sm" onclick="quickTag()">＋ Tag</button>
+       <button class="btn sm" onclick="quickTag()" title="Hand this lead to the Appointwise DM Closer">🎯 Tag closer</button>
      </div>
    </div>
    <div class="msgs" id="msgs">${msgsHtml}</div>
@@ -570,12 +570,15 @@ async function quickBook(){
     catch(e){toastErr('Send failed · '+l.name);}
   } else toast('Booking link sent · '+l.name+' (demo)');
 }
-async function quickTag(){
-  const l=curLead();const tag='closer';
+async function quickTag(){ const l=curLead(); if(l) await tagCloser(l.id, true); }
+// Hand a lead to the Appointwise DM Closer by tagging "closer" in HighLevel.
+async function tagCloser(id, fromInbox){
+  const l=LEADS.find(x=>x.id===id); if(!l)return;
+  const tag='closer';
   if(!l.tags.includes(tag)) l.tags.push(tag);
-  renderICtx(l);
-  if(LIVE){ try{await post({action:'tag',contactId:l.contactId,tag});toast('Tag added · '+l.name);}catch(e){toastErr('Tag failed');} }
-  else toast('Tag added · '+l.name+' (demo)');
+  if(fromInbox) renderICtx(l); else closeLeadMenu();
+  if(LIVE){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false) toast('Tagged for Appointwise closer · '+l.name); else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
+  else toast('Tagged closer · '+l.name+' (demo)');
 }
 
 /* ---------------- PIPELINE ---------------- */
@@ -648,6 +651,7 @@ function renderLeadMenu(){
     </div>
     <div class="sec" style="border:none;padding:10px 0 4px"><h4>Move to stage</h4><div class="lm-stages">${stageBtns}</div></div>
     <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" style="flex:1;justify-content:center" onclick="tagCloser('${l.id}')" title="Hand to Appointwise DM Closer">🎯 Tag closer</button>
       <button class="btn" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
       ${lmConfirm
         ? `<button class="btn" style="flex:1;justify-content:center;background:#b91c1c;border-color:#b91c1c;color:#fff" onclick="removeLead('${l.id}')">Confirm remove</button>`

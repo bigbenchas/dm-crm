@@ -486,11 +486,15 @@ function saveRead(){ try{ localStorage.setItem('bb_read',JSON.stringify(READ)); 
 function unreadEff(l){ return !!(l && l.unread && !(READ[l.id]!=null && READ[l.id]>=(l.lastMs||0))); }
 function markRead(ids, read){
   ids.forEach(id=>{ const l=LEADS.find(x=>x.id===id); if(!l)return;
-    if(read){ READ[id]=l.lastMs||Date.now(); if(LIVE&&l.contactId) post({action:'read',contactId:l.contactId}).catch(()=>{}); }
-    else { delete READ[id]; }
+    if(read){ READ[id]=l.lastMs||Date.now(); l.unread=false; pushRead(l.contactId,READ[id]); }   // durable + cross-device
+    else { delete READ[id]; pushRead(l.contactId,0); }
   });
   saveRead();
 }
+// Read/handled state lives in Supabase (HL can't store DM read-state via API), so it's shared across
+// every device and never pops back. A new message (lastMs > stored read_ms) re-surfaces it as unread.
+async function pushRead(contactId, ms){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ await sb.from('crm_read').upsert({contact_id:contactId,read_ms:ms,updated_at:new Date().toISOString()}); }catch(e){} }
+async function loadReadMap(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_read').select('contact_id,read_ms'); (data||[]).forEach(r=>{ const ms=Number(r.read_ms)||0; if(ms>0) READ[r.contact_id]=ms; else delete READ[r.contact_id]; }); saveRead(); }catch(e){} }
 let selSet=new Set();
 function toggleSel(id,on){ if(on)selSet.add(id); else selSet.delete(id); renderIList(); }
 function toggleSelectAll(on){ const rows=iFiltered(); rows.forEach(l=>{ if(on)selSet.add(l.id); else selSet.delete(l.id); }); renderIList(); }
@@ -997,7 +1001,7 @@ async function sendJake(){
 let rtTimer=null, rtOn=false, lastSig='';
 // Cheap signature of what's actually visible — so a background refresh only redraws
 // when something really changed (stage, score, new message, unread), never on a no-op.
-function leadsSig(){ let s=LEADS.length+'|'; for(const l of LEADS) s+=l.id+(l.stageId||'')+l.score+l.lastMs+(l.unread?'1':'0')+(l.needs?'1':'0')+';'; return s; }
+function leadsSig(){ let s=LEADS.length+'|'; for(const l of LEADS) s+=l.id+(l.stageId||'')+l.score+l.lastMs+(unreadEff(l)?'1':'0')+(l.needs?'1':'0')+';'; return s; }
 // Apply fresh data WITHOUT knocking the user off: skip redraw if nothing changed,
 // and preserve scroll position (vertical + the pipeline's horizontal scroll) when it does.
 function applyRefresh(){
@@ -1014,13 +1018,15 @@ function applyRefresh(){
   const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left;
 }
 function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}applyRefresh();},700);}
+let SB=null;
+async function getSB(){ if(SB)return SB; try{ const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2'); SB=createClient(CONFIG.supabaseUrl,CONFIG.anonKey); }catch(e){} return SB; }
 async function startRealtime(){
   if(!LIVE)return;
+  const sb=await getSB(); if(!sb){ window.__rtStatus='error'; return; }
   try{
-    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
-    const sb=createClient(CONFIG.supabaseUrl,CONFIG.anonKey);
     sb.channel('crm-signal')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'crm_signal'},()=>{window.__rtPings=(window.__rtPings||0)+1;refreshSoon();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'crm_read'},()=>{ loadReadMap().then(()=>{ renderNav(); if(cur==='inbox')renderIList(); }); })
       .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
   }catch(e){ window.__rtStatus='error'; }
 }
@@ -1069,11 +1075,11 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
-  window.__pollTimer=setInterval(async()=>{await loadLeads();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
+  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

@@ -131,6 +131,12 @@
   .snz-pop{position:absolute;top:100%;right:0;margin-top:4px;flex-direction:column;background:#141923;border:1px solid var(--border);border-radius:10px;padding:4px;z-index:60;min-width:124px;box-shadow:0 10px 28px rgba(0,0,0,.45)}
   .snz-pop button{background:none;border:none;color:var(--text);text-align:left;padding:7px 10px;font-size:12px;cursor:pointer;border-radius:7px;font-family:var(--font);width:100%}
   .snz-pop button:hover{background:var(--panel2)}
+  .cmdk-back{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.45);display:flex;justify-content:center;padding-top:12vh}
+  .cmdk{width:560px;max-width:92vw;height:fit-content;max-height:64vh;background:#141923;border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .cmdk input{width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:15px;padding:14px 16px;font-family:var(--font);outline:none;box-sizing:border-box}
+  .cmdk-list{max-height:50vh;overflow:auto;padding:6px}
+  .cmdk-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text)}
+  .cmdk-item:hover,.cmdk-item.sel{background:var(--panel2)}
   .ifilter option,.ifilter optgroup{background:#141923;color:var(--text)}
   .iconvos{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px}
   .crow{display:flex;gap:10px;padding:10px;border-radius:12px;cursor:pointer;transition:.12s}
@@ -482,7 +488,7 @@ function saveAppt(){ try{ localStorage.setItem('bb_appt',JSON.stringify(APPT)); 
 async function loadApptMap(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_appt').select('contact_id,outcome,ts'); APPT={}; (data||[]).forEach(r=>{ if(r.outcome) APPT[r.contact_id]={outcome:r.outcome,ts:Number(r.ts)||0}; }); saveAppt(); }catch(e){} }
 async function pushAppt(contactId, outcome){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(outcome){ await sb.from('crm_appt').upsert({contact_id:contactId,outcome,ts:Date.now(),updated_at:new Date().toISOString()}); } else { await sb.from('crm_appt').delete().eq('contact_id',contactId); } }catch(e){} }
 function apptOf(l){ return (APPT[l.id]||{}).outcome||''; }
-function setAppt(id, outcome){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=apptOf(l)===outcome?'':outcome; if(nv) APPT[id]={outcome:nv,ts:Date.now()}; else delete APPT[id]; saveAppt(); pushAppt(l.contactId,nv);
+function setAppt(id, outcome){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=apptOf(l)===outcome?'':outcome; if(nv) APPT[id]={outcome:nv,ts:Date.now()}; else delete APPT[id]; saveAppt(); pushAppt(l.contactId,nv); if(nv) logAct('call_'+nv,l.contactId);
   toast((nv==='showed'?'Marked showed · ':nv==='noshow'?'Marked no-show · ':'Outcome cleared · ')+l.name); refreshToday();
   const el=document.getElementById('lmAppt'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadAppt(ll); } }
 function showStats(){ const booked=LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)); let showed=0,noshow=0; booked.forEach(l=>{const o=apptOf(l); if(o==='showed')showed++; else if(o==='noshow')noshow++;}); const rate=(showed+noshow)?Math.round(showed/(showed+noshow)*100):null; return {booked:booked.length,showed,noshow,rate}; }
@@ -492,7 +498,7 @@ function isSnoozed(l){ const m=FOLLOW[l.id]; return !!(m && m>NOW()); }
 function isDue(l){ const m=FOLLOW[l.id]; return !!(m && m<=NOW()); }
 function snooze(id, days){ const l=LEADS.find(x=>x.id===id); if(!l)return; const ms=NOW()+days*864e5; FOLLOW[id]=ms; saveFollow(); pushFollow(l.contactId,ms); toast('Follow-up set · '+l.name+' · '+(days>=7?'1 week':days+'d')); refreshToday(); }
 function clearFollow(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; delete FOLLOW[id]; saveFollow(); pushFollow(l.contactId,0); refreshToday(); }
-function followDone(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; markRead([l.id],true); delete FOLLOW[id]; saveFollow(); pushFollow(l.contactId,0); renderNav(); refreshToday(); toast('Done · '+l.name); }
+function followDone(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; markRead([l.id],true); delete FOLLOW[id]; saveFollow(); pushFollow(l.contactId,0); logAct('followup_done',l.contactId); renderNav(); refreshToday(); toast('Done · '+l.name); }
 function refreshToday(){ if(cur==='today')render(); renderNav(); const el=document.getElementById('lmFollow'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadFollow(ll); } }
 function renderLeadFollow(l){
   const el=document.getElementById('lmFollow'); if(!el||lmId!==l.id)return;
@@ -504,11 +510,30 @@ function renderLeadFollow(l){
   }
 }
 // Queue builders (clients excluded; recent/important first)
-function qReplyNow(){ return LEADS.filter(l=>!isClient(l)&&needsEff(l)&&!isSnoozed(l)).sort((a,b)=>b.score-a.score); }
+// Speed-to-lead: "new" = inbound that arrived since you last opened Today (SEEN_AT). Respond fast.
+let SEEN_AT=(()=>{ try{ return Number(localStorage.getItem('bb_seen'))||0; }catch(e){ return 0; } })();
+let __seenWritten=false;
+function markSeenNow(){ if(__seenWritten)return; __seenWritten=true; try{ localStorage.setItem('bb_seen',String(Date.now())); }catch(e){} }
+function isNew(l){ return SEEN_AT>0 && (l.lastMs||0)>SEEN_AT; }
+function fmtHours(h){ if(h==null||!isFinite(h))return '—'; if(h<1)return '<1h'; if(h<24)return Math.round(h)+'h'; return Math.round(h/24)+'d'; }
+function waitColor(l){ const h=hoursSince(l); return h>=24?'#f87171':h>=6?'#f7c065':'#9be8c0'; }
+function qNew(){ return LEADS.filter(l=>!isClient(l)&&needsEff(l)&&!isSnoozed(l)&&isNew(l)).sort((a,b)=>b.lastMs-a.lastMs); }
+function qReplyNow(){ return LEADS.filter(l=>!isClient(l)&&needsEff(l)&&!isSnoozed(l)&&!isNew(l)).sort((a,b)=>b.score-a.score); }
 function qDue(){ return LEADS.filter(l=>!isClient(l)&&isDue(l)).sort((a,b)=>(FOLLOW[a.id]||0)-(FOLLOW[b.id]||0)); }
 function qCold(){ return LEADS.filter(l=>!isClient(l)&&l.inPipeline&&l.status==='open'&&l.lastDir==='outbound'&&!needsEff(l)&&!isSnoozed(l)&&!isDue(l)&&hoursSince(l)>=48&&hoursSince(l)<24*45).sort((a,b)=>b.score-a.score); }
 function qConfirm(){ return LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)&&!isSnoozed(l)&&!apptOf(l)).sort((a,b)=>b.score-a.score); }
-function todayCount(){ return qReplyNow().length + qDue().length; }   // the must-act-now items drive the badge
+function todayCount(){ return qNew().length + qReplyNow().length + qDue().length; }   // must-act-now items drive the badge
+// ---- Activity log + daily targets (also feeds the per-lead timeline) ----
+let GOALS=(()=>{ try{ return Object.assign({replies:20,booked:3,followups:10}, JSON.parse(localStorage.getItem('bb_goals')||'{}')); }catch(e){ return {replies:20,booked:3,followups:10}; } })();
+function saveGoals(){ try{ localStorage.setItem('bb_goals',JSON.stringify(GOALS)); }catch(e){} }
+let ACT_TODAY={replies:0,booked:0,followups:0,calls:0};
+function actBump(type,meta){ if(type==='reply_sent')ACT_TODAY.replies++; else if(type==='followup_done')ACT_TODAY.followups++; else if(type==='call_showed'||type==='call_noshow')ACT_TODAY.calls++; else if(type==='stage_moved'&&/call booked/i.test((meta&&meta.to)||''))ACT_TODAY.booked++; }
+async function logAct(type, contactId, meta){ actBump(type,meta); if(cur==='today')refreshGoals(); const sb=await getSB(); if(!sb||!LIVE)return; try{ await sb.from('crm_activity').insert({type,contact_id:contactId||null,meta:meta||null,ts:Date.now()}); }catch(e){} }
+function todayStartMs(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+async function loadActivityToday(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_activity').select('type,meta,ts').gte('ts',todayStartMs()); ACT_TODAY={replies:0,booked:0,followups:0,calls:0}; (data||[]).forEach(a=>actBump(a.type,a.meta)); }catch(e){} }
+function refreshGoals(){ const el=document.getElementById('goalsCard'); if(el)el.outerHTML=goalsCardHtml(); }
+function goalRow(label,have,target){ const pct=target?Math.min(100,Math.round(have/target*100)):0; const done=have>=target&&target>0; return `<div class="factor"><div class="fr"><span>${label}</span><span class="fp" style="color:${done?'#9be8c0':'var(--text)'}">${have}/${target}${done?' ✓':''}</span></div><div class="bar" style="width:100%"><i style="width:${pct}%;background:${done?'#22c55e':'var(--accent)'}"></i></div></div>`; }
+function goalsCardHtml(){ return `<div class="panel-card" id="goalsCard" style="margin-bottom:14px"><div class="ph"><span>🎯</span><h3>Today's targets</h3><span class="muted" style="margin-left:auto;font-size:11px">resets daily · edit in Settings</span></div>${goalRow('Replies sent',ACT_TODAY.replies,GOALS.replies)}${goalRow('Calls booked',ACT_TODAY.booked,GOALS.booked)}${goalRow('Follow-ups cleared',ACT_TODAY.followups,GOALS.followups)}</div>`; }
 function snoozeMenu(id){ return `<span class="snz"><button class="btn xs" onclick="event.stopPropagation();toggleSnz('${id}')">⏰ Snooze ▾</button><span class="snz-pop" id="snz_${id}" style="display:none"><button onclick="snooze('${id}',1)">Tomorrow</button><button onclick="snooze('${id}',3)">In 3 days</button><button onclick="snooze('${id}',7)">In 1 week</button></span></span>`; }
 function toggleSnz(id){ document.querySelectorAll('.snz-pop').forEach(p=>{ if(p.id!=='snz_'+id)p.style.display='none'; }); const p=document.getElementById('snz_'+id); if(p)p.style.display=p.style.display==='none'?'inline-flex':'none'; }
 function tItem(l, why, whyColor, actions){
@@ -525,12 +550,18 @@ function tSection(title, emoji, leads, builder, empty){
   return `<div class="panel-card" style="margin-bottom:14px"><div class="ph"><span>${emoji}</span><h3>${title}</h3><span class="muted" style="margin-left:auto;font-size:11px">${leads.length}</span></div>${leads.map(builder).join('')||`<div class="muted" style="font-size:12.5px">${empty}</div>`}</div>`;
 }
 function vToday(v){
-  const replyNow=qReplyNow(), due=qDue(), cold=qCold(), confirm=qConfirm();
-  const total=replyNow.length+due.length+cold.length+confirm.length;
+  const newDMs=qNew(), replyNow=qReplyNow(), due=qDue(), cold=qCold(), confirm=qConfirm();
+  const total=newDMs.length+replyNow.length+due.length+cold.length+confirm.length;
+  const waiting=[...newDMs,...replyNow];
+  const longest=waiting.length?Math.max(...waiting.map(l=>hoursSince(l))):0;
+  const avg=waiting.length?waiting.reduce((a,l)=>a+hoursSince(l),0)/waiting.length:0;
+  const replyAction=l=>`<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Reply</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`;
   v.innerHTML=`
-   ${total===0?`<div class="panel-card" style="max-width:520px;margin:30px auto;text-align:center"><div style="font-size:30px;margin-bottom:6px">✅</div><h3 style="font-size:16px">You're all caught up</h3><div class="muted" style="font-size:12.5px;margin-top:6px">No replies waiting, follow-ups due, or leads going cold. Nice work.</div></div>`:''}
-   ${tSection('Reply now','💬',replyNow,l=>tItem(l,'They messaged you'+(l.time&&l.time!=='—'?' · '+esc(l.time):''),'#f7c065',
-        `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`),'')}
+   ${goalsCardHtml()}
+   ${waiting.length?`<div class="muted" style="font-size:11.5px;margin:0 2px 12px">⚡ Speed-to-lead: <b style="color:${longest>=24?'#f87171':'#f7c065'}">${waiting.length} waiting</b> · longest ${fmtHours(longest)} · avg ${fmtHours(avg)}</div>`:''}
+   ${total===0?`<div class="panel-card" style="max-width:520px;margin:30px auto;text-align:center"><div style="font-size:30px;margin-bottom:6px">✅</div><h3 style="font-size:16px">You're all caught up</h3><div class="muted" style="font-size:12.5px;margin-top:6px">No new DMs, replies waiting, follow-ups due, or leads going cold. Nice work.</div></div>`:''}
+   ${tSection('New DMs since you last looked','🆕',newDMs,l=>tItem(l,'New · waiting '+fmtHours(hoursSince(l)),waitColor(l),replyAction(l)),'')}
+   ${tSection('Reply now','💬',replyNow,l=>tItem(l,'Waiting '+fmtHours(hoursSince(l)),waitColor(l),replyAction(l)),'')}
    ${tSection('Follow-ups due','⏰',due,l=>tItem(l,'Follow-up you scheduled is due','#9be8c0',
         `<button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>${snoozeMenu(l.id)}<button class="btn xs" onclick="event.stopPropagation();followDone('${l.id}')">✓ Done</button>`),'')}
    ${tSection('Going cold','📉',cold,l=>tItem(l,'You replied '+esc(l.time)+' ago, no response','#f87171',
@@ -538,6 +569,7 @@ function vToday(v){
    ${(()=>{const st=showStats();return st.showed+st.noshow>0?`<div class="muted" style="font-size:11.5px;margin:0 2px 12px">📊 Calls: ${st.booked} booked · ${st.showed} showed · ${st.noshow} no-show${st.rate!=null?' · <b style="color:#9be8c0">'+st.rate+'% show rate</b>':''}</div>`:'';})()}
    ${tSection('Confirm booked calls','📅',confirm,l=>tItem(l,esc(l.stageName||'Booked'),'#4ade80',
         `<button class="btn xs" onclick="event.stopPropagation();setAppt('${l.id}','showed')">✓ Showed</button><button class="btn xs" onclick="event.stopPropagation();setAppt('${l.id}','noshow')">✗ No-show</button><button class="btn xs" onclick="event.stopPropagation();openLead('${l.id}')">Open</button>`),'')}`;
+  markSeenNow();   // future visits compute "new" relative to now
 }
 document.addEventListener('click',e=>{ if(!e.target.closest('.snz')) document.querySelectorAll('.snz-pop').forEach(p=>p.style.display='none'); });
 
@@ -603,16 +635,23 @@ function toggleSel(id,on){ if(on)selSet.add(id); else selSet.delete(id); renderI
 function toggleSelectAll(on){ const rows=iFiltered(); rows.forEach(l=>{ if(on)selSet.add(l.id); else selSet.delete(l.id); }); renderIList(); }
 function markSelectedRead(){ if(!selSet.size)return; const ids=[...selSet]; markRead(ids,true); selSet.clear(); renderIList(); renderNav(); toast('Marked '+ids.length+' as read'); }
 function markAllRead(){ const ids=iFiltered().filter(unreadEff).map(l=>l.id); if(!ids.length){toast('Nothing unread');return;} markRead(ids,true); selSet.clear(); renderIList(); renderNav(); toast('Marked '+ids.length+' as read'); }
+function bulkTag(tag){ const ids=[...selSet]; if(!ids.length)return; ids.forEach(id=>addLeadTag(id,tag)); selSet.clear(); renderIList(); toast('Tagged '+ids.length+' · '+tag); }
+function bulkSnooze(days){ const ids=[...selSet]; if(!ids.length)return; ids.forEach(id=>snooze(id,days)); selSet.clear(); renderIList(); }
+function bulkMove(stageId){ const ids=[...selSet]; if(!ids.length)return; ids.forEach(id=>jumpStage(id,stageId)); selSet.clear(); renderIList(); const s=STAGES.find(x=>x.id===stageId); toast('Moved '+ids.length+(s?' → '+s.name:'')); }
 function toggleRead(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; markRead([id], unreadEff(l)); renderIList(); renderNav(); }
 function renderIList(){
   const wrap=document.getElementById('iconvos');if(!wrap)return;
   const rows=iFiltered();
   const sel=rows.filter(l=>selSet.has(l.id)).length;
+  const stageOpts=STAGES.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
   const bar=`<div class="ibar">
      <label class="ibar-chk"><input type="checkbox" ${sel&&sel===rows.length?'checked':''} onclick="toggleSelectAll(this.checked)"><span>${sel?sel+' selected':'Select all'}</span></label>
-     <span style="margin-left:auto;display:flex;gap:6px">
-       <button class="btn xs" onclick="markSelectedRead()" ${sel?'':'disabled'}>✓ Mark read</button>
-       <button class="btn xs" onclick="markAllRead()">Mark all read</button>
+     <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+       ${sel?`<button class="btn xs" onclick="markSelectedRead()">✓ Read</button>
+       <button class="btn xs" onclick="bulkSnooze(3)">⏰ Snooze 3d</button>
+       <button class="btn xs" onclick="bulkTag('closer')">🎯 Tag closer</button>
+       <select class="ifilter" style="padding:4px 8px;font-size:11px" onchange="if(this.value){bulkMove(this.value);this.value='';}"><option value="">Move to…</option>${stageOpts}</select>`
+       :`<button class="btn xs" onclick="markAllRead()">Mark all read</button>`}
      </span></div>`;
   wrap.innerHTML=bar+(rows.map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');const ur=unreadEff(l);
    return `<div class="crow ${l.id===activeId?'active':''}" onclick="openConvo('${l.id}')">
@@ -697,7 +736,7 @@ async function fetchSuggestions(l){
     l._jake = r && (r.suggestions||r.needsKey||r.mode) ? r : {mode:'warmup',note:'',suggestions:suggestions(l)};
     if(l._jake && !l._jake.needsKey && (!l._jake.suggestions||!l._jake.suggestions.length) && l._jake.mode!=='personal') l._jake.suggestions=suggestions(l);
   }catch(e){ l._jake={mode:'warmup',note:'',suggestions:suggestions(l)}; }
-  renderSugBar(l);
+  renderSugBar(l); renderCtxSummary(l);
 }
 function renderICtx(l){
   const ctx=document.getElementById('ictx');if(!ctx)return;
@@ -709,12 +748,14 @@ function renderICtx(l){
      <div style="font-weight:800;font-size:16px;margin-top:10px">${scLabel(l.score)} lead</div>
      <div class="muted" style="font-size:11.5px">AI lead score</div>
    </div>
+   <div id="ctxSummary"></div>
    ${l.coach?`<div class="sec"><div class="coach"><div class="h">🤖 AI coaching</div>${esc(l.coach)}</div></div>`:''}
    <div class="sec"><h4>Score breakdown</h4>${fac}</div>
    ${(l.group==='booked'||l.booked)?`<div class="sec"><h4>Pipeline stage</h4><div class="coach" style="background:linear-gradient(135deg,rgba(34,197,94,.12),rgba(34,197,94,.04));border-color:rgba(34,197,94,.3)"><div class="h" style="color:#9be8c0">📅 ${esc(l.stageName||'Scheduled')}</div>Confirm the call and prep their plan.</div></div>`:''}
    <div class="sec"><h4>Collected by AI</h4>${ans('Age &amp; location',l.ans.age?`${l.ans.age} · ${l.ans.loc||''}`:(l.ans.loc||null))}${ans('Current blocker',l.ans.blocker)}${ans('#1 goal',l.ans.goal)}</div>
    <div class="sec" style="border-bottom:none"><h4>Tags</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${l.tags.map(t=>`<span class="ctag">${esc(t)}</span>`).join('')||'<span class="muted" style="font-size:12px">No tags</span>'}</div></div>`;
 }
+function renderCtxSummary(l){ const el=document.getElementById('ctxSummary'); if(!el||activeId!==l.id)return; const s=l._jake&&l._jake.summary; el.innerHTML=s?`<div class="sec"><div class="coach" style="background:linear-gradient(135deg,rgba(45,212,191,.12),rgba(79,141,253,.06));border-color:rgba(45,212,191,.3)"><div class="h" style="color:#7fe0c0">🤖 Where this stands</div>${esc(s)}</div></div>`:''; }
 function curLead(){return LEADS.find(l=>l.id===activeId)}
 function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
 function useSug(i){const l=curLead();const arr=(l._jake&&l._jake.suggestions&&l._jake.suggestions.length?l._jake.suggestions:suggestions(l));const r=document.getElementById('reply');r.value=arr[i]||'';l._usedSug=arr[i]||'';grow(r);r.focus()}
@@ -729,7 +770,7 @@ async function sendReply(){
   r.value='';grow(r);renderThread(l);renderIList();
   if(LIVE){
     try{const res=await post({action:'send',contactId:l.contactId,channel:l.plat==='fb'?'FB':'IG',message:val});
-      if(res&&res.ok!==false){ toast('Reply sent · '+l.name); learnFromSend(l.contactId,val,usedSug,usedMode); }
+      if(res&&res.ok!==false){ toast('Reply sent · '+l.name); learnFromSend(l.contactId,val,usedSug,usedMode); logAct('reply_sent',l.contactId); }
       else toastErr('Send failed · '+l.name);}
     catch(e){toastErr('Send failed · '+l.name);}
   } else toast('Reply queued · '+l.name+' (demo)');
@@ -827,7 +868,7 @@ async function moveLeadToColumn(l,cdef){
   lastSig=leadsSig();   // we already reflected this change, so the next poll won't re-render over it
   if(LIVE && l.opportunityId && cdef.stageId){
     try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:cdef.stageId});
-      if(res&&res.ok!==false) toast(`${l.name}: ${fromName} → ${cdef.name}`); else toastErr(`Move failed · ${l.name}`);}
+      if(res&&res.ok!==false){ toast(`${l.name}: ${fromName} → ${cdef.name}`); logAct('stage_moved',l.contactId,{to:cdef.name}); } else toastErr(`Move failed · ${l.name}`);}
     catch(e){toastErr(`Move failed · ${l.name}`);}
   } else if(LIVE && !l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
   else { toast(`${l.name}: ${fromName} → ${cdef.name} (demo)`); }
@@ -847,7 +888,7 @@ function kcard(l){
 
 /* ---------------- lead action menu (click a card) ---------------- */
 let lmId=null, lmConfirm=false;
-function openLeadMenu(id){ lmId=id; lmConfirm=false; renderLeadMenu(); const l=LEADS.find(x=>x.id===id); if(l) fetchNotes(l); }
+function openLeadMenu(id){ lmId=id; lmConfirm=false; renderLeadMenu(); const l=LEADS.find(x=>x.id===id); if(l){ fetchNotes(l); loadLeadActivity(l); } }
 function closeLeadMenu(){ lmId=null; lmConfirm=false; const b=document.getElementById('lmBack'); if(b)b.remove(); }
 function renderLeadMenu(){
   const l=LEADS.find(x=>x.id===lmId); if(!l){closeLeadMenu();return;}
@@ -879,18 +920,35 @@ function renderLeadMenu(){
       <div id="lmNotes" style="max-height:160px;overflow:auto;margin-bottom:8px"></div>
       <div style="display:flex;gap:6px"><textarea id="lmNote" class="inp" placeholder="Add a note about this account…" style="flex:1;padding:7px 10px;font-size:12px;height:36px;resize:vertical"></textarea><button class="btn sm" onclick="addNote('${l.id}')">Add</button></div>
     </div>
+    <div id="lmActivity-wrap" class="sec" style="padding:10px 0 4px"><h4>Activity</h4><div id="lmActivity"></div></div>
+    ${lmConfirm?`<div class="sec" style="padding:8px 0 4px"><h4>Why are they lost?</h4><select id="lmReason" class="inp" style="width:100%;padding:8px 10px;font-size:12px"><option value="">Reason (optional)…</option><option>Price</option><option>Ghosted / no response</option><option>Has a coach</option><option>Not a fit</option><option>Bad timing</option><option>Wrong region</option><option>Other</option></select></div>`:''}
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn primary" style="flex:1;justify-content:center" onclick="closeLeadMenu();openLead('${l.id}')">💬 Open conversation</button>
       ${lmConfirm
-        ? `<button class="btn" style="flex:1;justify-content:center;background:#b91c1c;border-color:#b91c1c;color:#fff" onclick="removeLead('${l.id}')">Confirm remove</button>`
+        ? `<button class="btn" style="flex:1;justify-content:center;background:#b91c1c;border-color:#b91c1c;color:#fff" onclick="removeLead('${l.id}',(document.getElementById('lmReason')||{}).value||'')">Confirm remove</button>`
         : `<button class="btn" style="flex:1;justify-content:center;color:#f87171;border-color:rgba(248,113,113,.35)" onclick="lmConfirm=true;renderLeadMenu()">🗑 Remove from pipeline</button>`}
     </div>
-    ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline in HighLevel.<br>The contact and their DM history are kept. To make them a client, use Move to stage → Current Athlete instead.</div>`:''}
+    ${lmConfirm?`<div class="muted" style="font-size:11px;margin-top:9px;text-align:center;line-height:1.5">Removes this opportunity from the pipeline (kept in HighLevel). The reason is logged to your loss report. To make them a client, use Move to stage → Current Athlete instead.</div>`:''}
   </div>`;
   renderLeadNotes(l);   // notes persist on the lead object, so they survive re-renders (tag edits etc.)
   renderLeadFollow(l);
   renderLeadAppt(l);
+  renderLeadActivity(l);
 }
+function actLabel(a){ const m=a.meta||{}; switch(a.type){
+  case 'reply_sent': return '💬 You replied';
+  case 'call_showed': return '✅ Call showed';
+  case 'call_noshow': return '🚫 No-show';
+  case 'followup_done': return '✓ Follow-up cleared';
+  case 'stage_moved': return '↗ Moved to '+(m.to||'a stage');
+  case 'tag_added': return '🏷 Tagged "'+(m.tag||'')+'"';
+  case 'lost': return '❌ Removed'+(m.reason&&m.reason!=='unspecified'?' · '+m.reason:'');
+  default: return a.type; } }
+function renderLeadActivity(l){ const el=document.getElementById('lmActivity'); if(!el||lmId!==l.id)return; const a=l._acts;
+  if(a===undefined){ el.innerHTML='<div class="muted" style="font-size:11.5px">Loading…</div>'; return; }
+  if(!a.length){ el.innerHTML='<div class="muted" style="font-size:11.5px">No activity logged yet.</div>'; return; }
+  el.innerHTML=a.map(x=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span style="color:#dfe6f2">${esc(actLabel(x))}</span><span class="muted" style="white-space:nowrap">${esc(fmtTime(x.ts))}</span></div>`).join(''); }
+async function loadLeadActivity(l){ if(!l)return; l._acts=undefined; renderLeadActivity(l); const sb=await getSB(); if(!sb||!l.contactId){ l._acts=[]; renderLeadActivity(l); return; } try{ const {data}=await sb.from('crm_activity').select('type,meta,ts').eq('contact_id',l.contactId).order('ts',{ascending:false}).limit(25); l._acts=data||[]; }catch(e){ l._acts=[]; } renderLeadActivity(l); }
 function renderLeadAppt(l){
   const el=document.getElementById('lmAppt'); if(!el)return;
   if(!(l.group==='booked'||l.booked||isClient(l))){ el.innerHTML=''; return; }   // only for booked/clients
@@ -927,7 +985,7 @@ async function addLeadTag(id,tag){
   if(!l.tags) l.tags=[];
   if(!l.tags.map(t=>t.toLowerCase()).includes(tag.toLowerCase())) l.tags.push(tag);
   renderLeadMenu();
-  if(LIVE&&l.contactId){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false) toast((tag.toLowerCase()==='closer'?'Tagged for Appointwise closer · ':'Tagged "'+tag+'" · ')+l.name); else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
+  if(LIVE&&l.contactId){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false){ toast((tag.toLowerCase()==='closer'?'Tagged for Appointwise closer · ':'Tagged "'+tag+'" · ')+l.name); logAct('tag_added',l.contactId,{tag}); } else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
 }
 function addLeadTagInput(id){ const i=document.getElementById('lmTag'); const v=(i?.value||'').trim(); if(v){ if(i)i.value=''; addLeadTag(id,v); } }
 async function removeLeadTagAt(id,idx){
@@ -941,13 +999,14 @@ async function jumpStage(id,stageId){
   l.stageId=s.id; l.stageName=s.name; l.group=stageGroup(s.name); l.booked=l.group==='booked'||l.group==='won';
   closeLeadMenu();
   if(cur==='pipeline'){ if(!moveCardClean(l,s.id)){ const bd=document.getElementById('board'); const left=bd?bd.scrollLeft:0; render(); const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left; } lastSig=leadsSig(); }
-  if(LIVE&&l.opportunityId){ try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:s.id}); if(res&&res.ok!==false)toast(`${l.name}: ${from} → ${s.name}`); else toastErr(`Move failed · ${l.name}`);}catch(e){toastErr(`Move failed · ${l.name}`);} }
+  if(LIVE&&l.opportunityId){ try{const res=await post({action:'stage',opportunityId:l.opportunityId,stageId:s.id}); if(res&&res.ok!==false){toast(`${l.name}: ${from} → ${s.name}`); logAct('stage_moved',l.contactId,{to:s.name});} else toastErr(`Move failed · ${l.name}`);}catch(e){toastErr(`Move failed · ${l.name}`);} }
   else if(LIVE&&!l.opportunityId){ toastErr(`${l.name} has no opportunity to move`); }
 }
-async function removeLead(id){
+async function removeLead(id, reason){
   const l=LEADS.find(x=>x.id===id); if(!l)return;
-  const name=l.name, oppId=l.opportunityId;
+  const name=l.name, oppId=l.opportunityId, cid=l.contactId;
   closeLeadMenu();
+  logAct('lost', cid, {reason:(reason||'unspecified'), name});   // feeds the loss report
   LEADS=LEADS.filter(x=>x.id!==id);            // optimistic remove
   if(cur!=='inbox')render();
   if(LIVE&&oppId){ try{const res=await post({action:'delete',opportunityId:oppId}); if(res&&res.ok!==false)toast(`Removed from pipeline · ${name}`); else toastErr(`Remove failed · ${name}`);}catch(e){toastErr(`Remove failed · ${name}`);} }
@@ -1027,6 +1086,7 @@ function vAnalytics(v){
        :`<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6">📊 Your day-by-day trend (booked → showed → clients → cash) builds here automatically — one snapshot is saved each day. Come back tomorrow to see movement.</div>`}
      <div class="muted" style="font-size:11px;margin-top:12px;line-height:1.55">Show rate fills in as you log call outcomes (✓ Showed / ✗ No-show on booked leads). Cash & clients reflect won deals in HighLevel. True set→show→close conversion comes from the daily deltas above, not point-in-time counts.</div>
    </div>
+   <div id="lossReport"></div>
    <div class="grid" style="grid-template-columns:1.4fr 1fr">
      <div class="panel-card">
        <div class="ph"><span>🔻</span><h3>Pipeline funnel${LIVE?' — live':''}</h3></div>
@@ -1046,7 +1106,13 @@ function vAnalytics(v){
      ${[['Avg deal value',st.clients?fmtMoney(st.cash/st.clients):'$0','per client won','flat'],['Hot leads',P.filter(l=>l.score>=80).length+'','80+ score','up'],['Clients won',st.clients+'','current athletes','up'],['Avg score',P.length?Math.round(P.reduce((a,b)=>a+b.score,0)/P.length):0,'qualified pool','flat']]
        .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
    </div>`;
+  fillLossReport();
 }
+async function fillLossReport(){ const el=document.getElementById('lossReport'); if(!el)return; const sb=await getSB(); if(!sb)return;
+  try{ const {data}=await sb.from('crm_activity').select('meta').eq('type','lost'); const counts={}; (data||[]).forEach(a=>{ const r=(a.meta&&a.meta.reason)||'unspecified'; counts[r]=(counts[r]||0)+1; });
+    const rows=Object.entries(counts).sort((a,b)=>b[1]-a[1]); if(!rows.length){ el.innerHTML=''; return; } const tot=rows.reduce((a,b)=>a+b[1],0);
+    el.innerHTML=`<div class="panel-card" style="margin-bottom:16px"><div class="ph"><span>📉</span><h3>Why deals are lost</h3><span class="muted" style="margin-left:auto;font-size:11px">${tot} removed</span></div>${rows.map(([r,n])=>`<div class="factor"><div class="fr"><span>${esc(r)}</span><span class="fp">${n}</span></div><div class="bar" style="width:100%"><i style="width:${Math.round(n/tot*100)}%;background:var(--cold)"></i></div></div>`).join('')}</div>`;
+  }catch(e){} }
 
 /* ---------------- AUTOMATIONS ---------------- */
 function vAutomations(v){
@@ -1100,9 +1166,20 @@ function vSettings(v){
       <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Jake learns your voice automatically from every reply you send and every edit you make to his drafts, then writes future suggestions to match. It sharpens on its own as you work, or refresh it now.</p>
       <div id="jakeVoice" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;max-height:300px;overflow:auto;color:#dfe6f2"></div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn sm" onclick="refreshVoice()">↻ Update voice from my messages</button><span id="voiceStatus" class="muted" style="font-size:11px"></span></div>
+    </div>
+    <div class="panel-card" style="margin-top:16px">
+      <div class="ph"><span>🎯</span><h3>Daily targets</h3><span class="muted" style="margin-left:auto;font-size:11px">shown on Today with progress</span></div>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Your daily goals. They show on the Today tab with progress bars and reset each day.</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--muted)">Replies sent<br><input id="gReplies" type="number" min="0" class="inp" style="width:90px;padding:7px 10px;margin-top:4px" value="${GOALS.replies}"></label>
+        <label style="font-size:12px;color:var(--muted)">Calls booked<br><input id="gBooked" type="number" min="0" class="inp" style="width:90px;padding:7px 10px;margin-top:4px" value="${GOALS.booked}"></label>
+        <label style="font-size:12px;color:var(--muted)">Follow-ups cleared<br><input id="gFollow" type="number" min="0" class="inp" style="width:90px;padding:7px 10px;margin-top:4px" value="${GOALS.followups}"></label>
+      </div>
+      <div style="margin-top:12px"><button class="btn primary sm" onclick="saveGoalsFromUI()">Save targets</button> <span id="goalStatus" class="muted" style="font-size:11px;margin-left:8px"></span></div>
     </div>`;
   loadPlaybook();
 }
+function saveGoalsFromUI(){ GOALS={ replies:Math.max(0,+(document.getElementById('gReplies').value)||0), booked:Math.max(0,+(document.getElementById('gBooked').value)||0), followups:Math.max(0,+(document.getElementById('gFollow').value)||0) }; saveGoals(); const s=document.getElementById('goalStatus'); if(s){ s.textContent='Saved ✓'; setTimeout(()=>{if(s)s.textContent='';},2500); } }
 async function loadPlaybook(){ try{const r=await authGet('?action=getconfig');const j=await r.json();
   const t=document.getElementById('jakePb');if(t)t.value=j.playbook||'';
   const v=document.getElementById('jakeVoice');if(v)v.textContent=j.voice||'Jake hasn’t learned your voice yet — send a few replies and a profile will build automatically.';
@@ -1215,6 +1292,40 @@ function toastErr(msg){const t=document.createElement('div');t.className='toast 
 document.getElementById('gsearch').addEventListener('input',()=>{if(['inbox','pipeline','leads'].includes(cur))render()});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&document.activeElement?.id==='reply'){e.preventDefault();sendReply()}});
 
+/* ---------------- ⌘K command palette ---------------- */
+const CMDK_CMDS=[
+  {ic:'☀',label:'Go to Today',run:()=>go('today')},
+  {ic:'✉',label:'Go to Inbox',run:()=>go('inbox')},
+  {ic:'▤',label:'Go to Pipeline',run:()=>go('pipeline')},
+  {ic:'☷',label:'Go to Leads',run:()=>go('leads')},
+  {ic:'📈',label:'Go to Analytics',run:()=>go('analytics')},
+  {ic:'▦',label:'Go to Dashboard',run:()=>go('dashboard')},
+  {ic:'🤖',label:'Ask Jake',run:()=>go('jake')},
+  {ic:'⚙',label:'Go to Settings',run:()=>go('settings')},
+  {ic:'✓',label:'Mark all read (inbox)',run:()=>{go('inbox');setTimeout(markAllRead,60);}},
+  {ic:'↻',label:'Refresh from HighLevel',run:()=>manualRefresh()},
+];
+let cmdkSel=0, cmdkItems=[];
+function cmdkResults(q){ q=(q||'').toLowerCase().trim();
+  const cmds=CMDK_CMDS.filter(c=>!q||c.label.toLowerCase().includes(q));
+  let leads=[];
+  if(q&&typeof LEADS!=='undefined') leads=LEADS.filter(l=>(l.name||'').toLowerCase().includes(q)).slice(0,6).map(l=>({ic:'💬',label:l.name+(l.stageName?' · '+l.stageName:''),run:()=>openLead(l.id)}));
+  return [...cmds,...leads];
+}
+function renderCmdk(){ const inp=document.getElementById('cmdkInput'); if(!inp)return; cmdkItems=cmdkResults(inp.value); if(cmdkSel>=cmdkItems.length)cmdkSel=Math.max(0,cmdkItems.length-1);
+  document.getElementById('cmdkList').innerHTML=cmdkItems.map((it,i)=>`<div class="cmdk-item ${i===cmdkSel?'sel':''}" onclick="cmdkRun(${i})"><span style="width:18px;text-align:center">${it.ic}</span><span>${esc(it.label)}</span></div>`).join('')||'<div class="muted" style="padding:12px;font-size:12px">No matches</div>'; }
+function cmdkRun(i){ const it=cmdkItems[i]; if(it){ closePalette(); it.run(); } }
+function openPalette(){ if(document.getElementById('cmdkBack'))return; cmdkSel=0; const b=document.createElement('div'); b.id='cmdkBack'; b.className='cmdk-back'; b.addEventListener('mousedown',e=>{if(e.target===b)closePalette();}); b.innerHTML=`<div class="cmdk"><input id="cmdkInput" placeholder="Search commands or leads…" autocomplete="off"><div id="cmdkList" class="cmdk-list"></div></div>`; document.body.appendChild(b); const inp=document.getElementById('cmdkInput'); inp.addEventListener('input',renderCmdk); inp.focus(); renderCmdk(); }
+function closePalette(){ const b=document.getElementById('cmdkBack'); if(b)b.remove(); }
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); document.getElementById('cmdkBack')?closePalette():openPalette(); return; }
+  if(!document.getElementById('cmdkBack'))return;
+  if(e.key==='Escape'){ e.preventDefault(); closePalette(); }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); cmdkSel=Math.min(cmdkSel+1,cmdkItems.length-1); renderCmdk(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); cmdkSel=Math.max(cmdkSel-1,0); renderCmdk(); }
+  else if(e.key==='Enter'){ e.preventDefault(); cmdkRun(cmdkSel); }
+});
+
 /* ---------------- login gate ---------------- */
 function showLogin(msg){
   const o=document.createElement('div');o.id='loginScreen';
@@ -1247,7 +1358,7 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap(), loadActivityToday()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   loadMetricsTrend().then(()=>{ snapshotMetrics(); if(cur==='analytics')render(); });   // daily outcome snapshot + trend

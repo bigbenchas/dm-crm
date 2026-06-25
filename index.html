@@ -687,13 +687,13 @@ function renderSugBar(l){
   const sugs=(j&&j.suggestions)||[];
   const note = j&&j.note ? `<div style="font-size:10.5px;color:${j.mode==='transition'?'#9be8c0':'var(--muted)'};width:100%;margin-bottom:2px">${j.mode==='transition'?'🤝 ':''}${esc(j.note)}</div>` : '';
   const chips = sugs.map((s,i)=>`<div class="schip" onclick="useSug(${i})" title="${esc(s).replace(/"/g,'&quot;')}">✨ ${esc(s)}</div>`).join('');
-  bar.innerHTML = note + `<span class="lbl">Jake suggests:</span>` + (chips || `<span class="muted" style="font-size:11.5px">No draft — write your own.</span>`)
+  bar.innerHTML = note + `<span class="lbl">${j&&j.cached?'Jake pre-drafted ✨:':'Jake suggests:'}</span>` + (chips || `<span class="muted" style="font-size:11.5px">No draft — write your own.</span>`)
     + (j&&j.mode==='transition'?`<button class="schip" style="color:#9be8c0;border-color:rgba(34,197,94,.35)" onclick="quickTag()">🎯 then Tag closer</button>`:'');
 }
 async function fetchSuggestions(l){
   l._jake=undefined; renderSugBar(l);
   try{
-    const r=await post({action:'suggest',contactId:l.contactId,name:(l.name||'').split(' ')[0]});
+    const r=await post({action:'suggest',contactId:l.contactId,name:(l.name||'').split(' ')[0],lastMs:l.lastMs||0});
     l._jake = r && (r.suggestions||r.needsKey||r.mode) ? r : {mode:'warmup',note:'',suggestions:suggestions(l)};
     if(l._jake && !l._jake.needsKey && (!l._jake.suggestions||!l._jake.suggestions.length) && l._jake.mode!=='personal') l._jake.suggestions=suggestions(l);
   }catch(e){ l._jake={mode:'warmup',note:'',suggestions:suggestions(l)}; }

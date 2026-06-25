@@ -979,7 +979,27 @@ function vLeads(v){
 function setSort(s){leadSort=s;render()}
 
 /* ---------------- ANALYTICS ---------------- */
+// ---- Outcome reporting: set / show / close / cash ----
+function fmtMoney(n){ n=Number(n)||0; return '$'+Math.round(n).toLocaleString(); }
+function outcomeStats(){
+  const P=LEADS.filter(isProspect);
+  const replied=P.filter(l=>l.lastDir==='inbound'||l.needs).length;
+  const booked=P.filter(l=>l.group==='booked'||l.booked).length;
+  let showed=0,noshow=0; LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)).forEach(l=>{const o=apptOf(l); if(o==='showed')showed++; else if(o==='noshow')noshow++;});
+  const clients=LEADS.filter(isClient);
+  const cash=clients.reduce((a,l)=>a+(Number(l.value)||0),0);
+  const pipeline=P.reduce((a,l)=>a+(Number(l.value)||0),0);
+  return { leads:P.length, replied, booked, showed, noshow, clients:clients.length, cash, pipeline,
+    setRate: replied?Math.round(booked/replied*100):0,
+    showRate: (showed+noshow)?Math.round(showed/(showed+noshow)*100):null,
+    closeRate: showed?Math.round(clients.length/showed*100):(booked?Math.round(clients.length/booked*100):0) };
+}
+let METRICS=[];
+function dayStr(){ return new Date().toISOString().slice(0,10); }
+async function snapshotMetrics(){ const sb=await getSB(); if(!sb||!LIVE)return; try{ await sb.from('crm_metrics').upsert({day:dayStr(),data:outcomeStats(),updated_at:new Date().toISOString()}); }catch(e){} }
+async function loadMetricsTrend(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_metrics').select('day,data').order('day',{ascending:false}).limit(14); METRICS=(data||[]); }catch(e){} }
 function vAnalytics(v){
+  const st=outcomeStats();
   const P=LEADS.filter(isProspect);                 // active prospects only
   const total=P.length||1;
   const replied=P.filter(l=>l.lastDir==='inbound'||l.needs).length;
@@ -993,10 +1013,23 @@ function vAnalytics(v){
     ['Cool (38-57)',P.filter(l=>l.score>=38&&l.score<58).length,'var(--cool)'],['Cold (<38)',P.filter(l=>l.score<38).length,'var(--cold)']];
   const dmax=Math.max(...dist.map(d=>d[1]),1);
   const ig=P.filter(l=>l.plat==='ig').length, fb=P.filter(l=>l.plat==='fb').length;
+  const trend=METRICS.slice().reverse();   // oldest→newest
+  // honest snapshot KPIs only (true cohort conversion rates come from the daily trend deltas, not point-in-time counts)
   v.innerHTML=`
+   <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+     ${[['Cash collected',fmtMoney(st.cash),st.clients+' clients won','up'],['Open pipeline',fmtMoney(st.pipeline),st.leads+' active leads','flat'],['Show rate',st.showRate!=null?st.showRate+'%':'—',(st.showed+st.noshow)+' calls logged','up'],['Booked now',st.booked+'',st.showed+' shown · '+st.noshow+' no-show','flat']]
+       .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
+   </div>
+   <div class="panel-card" style="margin-bottom:16px">
+     <div class="ph"><span>💰</span><h3>Sales outcomes over time</h3><span class="muted" style="margin-left:auto;font-size:11px">snapshot saved daily</span></div>
+     ${trend.length>1?`<table style="width:100%;font-size:12px;margin-top:4px"><thead><tr style="color:var(--muted);text-align:right"><th style="text-align:left;padding-bottom:6px">Day</th><th>Booked</th><th>Showed</th><th>No-show</th><th>Clients</th><th>Cash</th></tr></thead>
+       <tbody>${trend.map(m=>`<tr style="text-align:right"><td style="text-align:left;color:var(--muted)">${esc(m.day.slice(5))}</td><td>${m.data.booked||0}</td><td style="color:#9be8c0">${m.data.showed||0}</td><td style="color:#f7c065">${m.data.noshow||0}</td><td>${m.data.clients||0}</td><td>${fmtMoney(m.data.cash||0)}</td></tr>`).join('')}</tbody></table>`
+       :`<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6">📊 Your day-by-day trend (booked → showed → clients → cash) builds here automatically — one snapshot is saved each day. Come back tomorrow to see movement.</div>`}
+     <div class="muted" style="font-size:11px;margin-top:12px;line-height:1.55">Show rate fills in as you log call outcomes (✓ Showed / ✗ No-show on booked leads). Cash & clients reflect won deals in HighLevel. True set→show→close conversion comes from the daily deltas above, not point-in-time counts.</div>
+   </div>
    <div class="grid" style="grid-template-columns:1.4fr 1fr">
      <div class="panel-card">
-       <div class="ph"><span>🔻</span><h3>Conversion funnel${LIVE?' — live':''}</h3></div>
+       <div class="ph"><span>🔻</span><h3>Pipeline funnel${LIVE?' — live':''}</h3></div>
        <div class="funnel">${funnel.map(f=>`<div class="frow"><div class="fl">${f[0]}</div>
          <div class="ftrack"><i style="width:${Math.max(f[1]/max*100,6)}%">${f[1]}</i></div><div class="fpct">${Math.round(f[1]/max*100)}%</div></div>`).join('')}</div>
        <div class="insight" style="margin-top:14px"><div class="ic" style="background:rgba(248,113,113,.15)">⚠️</div><div><div class="it">Biggest leak: reply → script</div><div class="id">Get more replies into the qualifying script — that is where the funnel widens.</div></div></div>
@@ -1010,7 +1043,7 @@ function vAnalytics(v){
      </div>
    </div>
    <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
-     ${[['Reply rate',Math.round(replied/total*100)+'%','of current set','flat'],['Reply → booked',replied?Math.round(booked/replied*100)+'%':'0%','of responders','flat'],['Booked → client',booked?Math.round(won/booked*100)+'%':'0%','show + close','flat'],['Avg score',P.length?Math.round(P.reduce((a,b)=>a+b.score,0)/P.length):0,'qualified pool','flat']]
+     ${[['Avg deal value',st.clients?fmtMoney(st.cash/st.clients):'$0','per client won','flat'],['Hot leads',P.filter(l=>l.score>=80).length+'','80+ score','up'],['Clients won',st.clients+'','current athletes','up'],['Avg score',P.length?Math.round(P.reduce((a,b)=>a+b.score,0)/P.length):0,'qualified pool','flat']]
        .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
    </div>`;
 }
@@ -1217,6 +1250,7 @@ async function boot(){
   await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
+  loadMetricsTrend().then(()=>{ snapshotMetrics(); if(cur==='analytics')render(); });   // daily outcome snapshot + trend
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
   window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }

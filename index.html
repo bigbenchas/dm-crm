@@ -423,7 +423,6 @@ async function refreshStages(){
 const VIEWS=[
  {id:'dashboard',name:'Dashboard',ic:'▦'},
  {id:'today',name:'Today',ic:'☀',badge:()=>todayCount()},
- {id:'jake',name:'Ask Jake',ic:'🤖'},
  {id:'inbox',name:'Inbox',ic:'✉',badge:()=>LEADS.filter(unreadEff).length},
  {id:'pipeline',name:'Pipeline',ic:'▤'},
  {id:'leads',name:'Leads',ic:'☷'},
@@ -1413,7 +1412,6 @@ const CMDK_CMDS=[
   {ic:'☷',label:'Go to Leads',run:()=>go('leads')},
   {ic:'📈',label:'Go to Analytics',run:()=>go('analytics')},
   {ic:'▦',label:'Go to Dashboard',run:()=>go('dashboard')},
-  {ic:'🤖',label:'Ask Jake',run:()=>go('jake')},
   {ic:'⚙',label:'Go to Settings',run:()=>go('settings')},
   {ic:'✓',label:'Mark all read (inbox)',run:()=>{go('inbox');setTimeout(markAllRead,60);}},
   {ic:'↻',label:'Refresh from HighLevel',run:()=>manualRefresh()},

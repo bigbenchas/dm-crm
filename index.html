@@ -216,6 +216,61 @@
   .lm-stage:hover{background:var(--accent);border-color:transparent;color:#fff}
   .lm-stage.cur{background:var(--panel2);color:var(--muted2);cursor:default;border-style:dashed}
   @media(max-width:1150px){.ictx{display:none}}
+
+  /* ---------------- mobile bottom nav + responsive ---------------- */
+  .tl-nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-only{display:none}
+  .mnav{display:none}
+  .mnav{position:fixed;bottom:0;left:0;right:0;z-index:90;background:rgba(11,15,21,.97);backdrop-filter:blur(10px);border-top:1px solid var(--border-soft);height:62px;padding:5px 2px;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .mnav::-webkit-scrollbar{display:none}
+  .mitem{flex:1 0 auto;min-width:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--muted);font-size:9.5px;font-weight:600;cursor:pointer;border-radius:10px;position:relative;padding:2px 4px}
+  .mitem.active{color:#fff;background:var(--panel2)}
+  .mitem .ic{font-size:18px;line-height:1}
+  .mitem .badge{position:absolute;top:2px;left:calc(50% + 6px);font-size:8.5px;background:var(--accent);color:#fff;padding:0 4px;border-radius:10px;font-weight:700;line-height:15px}
+  @media(max-width:760px){
+    .shell{height:100dvh}
+    .side{display:none}
+    .mnav{display:flex}
+    .main{height:100%}
+    .topbar{padding:10px 13px;gap:10px}
+    .topbar h2{font-size:16px}
+    .topbar .tsub{display:none}
+    .search{display:none}
+    .spacer{display:none}
+    #livewrap{transform:scale(.88);transform-origin:right center;margin-left:auto}
+    .view{padding:14px 12px 76px!important;overflow-x:hidden}
+    .view .grid{grid-template-columns:1fr!important;gap:12px!important}
+    .panel-card{overflow-x:auto;max-width:100%}
+    /* inbox: one pane at a time */
+    .inbox{display:block;height:calc(100dvh - 118px)}
+    .ilist{width:100%;min-width:0;border-right:none;height:100%}
+    .iconvos{padding-bottom:8px}
+    .thread{display:none}
+    .ictx{display:none}
+    body.m-thread .ilist{display:none}
+    body.m-thread .mnav{display:none}
+    body.m-thread .view{padding-bottom:0!important}
+    body.m-thread .inbox{height:calc(100dvh - 56px)}
+    body.m-thread .thread{display:flex;height:100%}
+    body.m-ctx .ictx{display:block!important;position:fixed;inset:0;z-index:160;width:100%;background:var(--bg);overflow:auto;padding:16px 14px 40px;border:none}
+    .t-head{flex-wrap:wrap;gap:8px;height:auto;padding:10px 12px}
+    .t-head h2,.t-head>div:nth-child(3){min-width:0}
+    /* full-width modals + palette */
+    .lm-card{width:94vw!important;max-width:94vw!important;max-height:86dvh;overflow:auto}
+    .cmdk{width:94vw}
+    .cmdk-back{padding-top:8vh}
+    /* pipeline: one swipeable column per screen */
+    .col{width:84vw;min-width:84vw}
+    .board{height:calc(100dvh - 130px)!important}
+    /* leads table compact */
+    .panel-card table{font-size:11px}
+    .m-only{display:inline-flex!important}
+    .d-only-inline{display:none}
+    /* Today rows: clip name, drop actions to their own line */
+    .tl-item{flex-wrap:wrap;row-gap:8px}
+    .tl-item .tl-actions{width:100%;justify-content:flex-end!important;margin-left:0!important}
+    .tl-item .scpill{flex-shrink:0}
+  }
 </style>
 </head>
 <body>
@@ -235,6 +290,7 @@
     <div class="view" id="view"></div>
   </div>
 </div>
+<nav class="mnav" id="mnav"></nav>
 <div class="toasts" id="toasts"></div>
 
 <script>
@@ -369,12 +425,16 @@ const VIEWS=[
  {id:'automations',name:'Automations',ic:'⚡'},
  {id:'settings',name:'Settings',ic:'⚙'},
 ];
+function isMobile(){ return window.matchMedia('(max-width:760px)').matches; }
 function renderNav(){
   document.getElementById('nav').innerHTML=
    `<div class="lbl">Workspace</div>`+
    VIEWS.map(v=>{const b=v.badge?v.badge():0;
     return `<div class="navitem ${v.id===cur?'active':''}" onclick="go('${v.id}')">
       <span class="ic">${v.ic}</span><span>${v.name}</span>${b?`<span class="badge">${b}</span>`:''}</div>`}).join('');
+  const mn=document.getElementById('mnav');
+  if(mn) mn.innerHTML=VIEWS.map(v=>{const b=v.badge?v.badge():0;
+    return `<div class="mitem ${v.id===cur?'active':''}" onclick="go('${v.id}')"><span class="ic">${v.ic}</span><span>${v.name}</span>${b?`<span class="badge">${b}</span>`:''}</div>`}).join('');
   renderLiveChip();
 }
 function renderLiveChip(){
@@ -383,7 +443,7 @@ function renderLiveChip(){
    ? `<div class="livechip"><span class="dot"></span> Live · HighLevel${rtOn?' · realtime':''}</div>`
    : `<span class="proto-badge" title="${esc(loadError||'')}">⚠ HighLevel unreachable</span>`;
 }
-function go(id){cur=id;renderNav();render()}
+function go(id){cur=id;document.body.classList.remove('m-thread','m-ctx');renderNav();render()}
 
 const TITLES={dashboard:['Dashboard','Your sales command center'],today:['Today','Your daily action queue — work it to zero'],jake:['Ask Jake','Your AI sales assistant — acts on live HighLevel'],inbox:['Inbox','Every DM, one structured engine'],
  pipeline:['Pipeline','Drag leads through your funnel'],leads:['Leads','All contacts, scored by AI'],
@@ -537,12 +597,12 @@ function goalsCardHtml(){ return `<div class="panel-card" id="goalsCard" style="
 function snoozeMenu(id){ return `<span class="snz"><button class="btn xs" onclick="event.stopPropagation();toggleSnz('${id}')">⏰ Snooze ▾</button><span class="snz-pop" id="snz_${id}" style="display:none"><button onclick="snooze('${id}',1)">Tomorrow</button><button onclick="snooze('${id}',3)">In 3 days</button><button onclick="snooze('${id}',7)">In 1 week</button></span></span>`; }
 function toggleSnz(id){ document.querySelectorAll('.snz-pop').forEach(p=>{ if(p.id!=='snz_'+id)p.style.display='none'; }); const p=document.getElementById('snz_'+id); if(p)p.style.display=p.style.display==='none'?'inline-flex':'none'; }
 function tItem(l, why, whyColor, actions){
-  return `<div class="lead-line" onclick="openLead('${l.id}')">
+  return `<div class="lead-line tl-item" onclick="openLead('${l.id}')">
     <div class="ava" style="width:38px;height:38px;font-size:13px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>
-    <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(l.name)}</div>
+    <div style="flex:1;min-width:0"><div class="tl-nm">${esc(l.name)}</div>
       <div style="font-size:11px;margin-top:1px;color:${whyColor}">${esc(why)}</div></div>
     ${scpill2(l.score)}
-    <span style="display:flex;gap:6px;align-items:center;margin-left:6px" onclick="event.stopPropagation()">${actions}</span>
+    <span class="tl-actions" style="display:flex;gap:6px;align-items:center;margin-left:6px" onclick="event.stopPropagation()">${actions}</span>
   </div>`;
 }
 function tSection(title, emoji, leads, builder, empty){
@@ -582,7 +642,7 @@ function vInbox(v){
   </div>`;
   renderITabs();renderIList();
   const start = (LEADS.find(l=>l.id===activeId && l.hasConv) || LEADS.find(l=>l.hasConv) || {}).id;
-  if(start) openConvo(start);
+  if(start && !isMobile()) openConvo(start);   // on phone, show the list first; tap a row to open
 }
 const ITABS=[['all','All'],['unread','Unread']];   // just All + Unread; everything else is the filter dropdown
 let iFilter='';   // '' | 'stage:<id>' | 'tag:<name>'
@@ -668,6 +728,7 @@ function renderIList(){
 }
 async function openConvo(id){
   activeId=id;const l=LEADS.find(x=>x.id===id);if(!l)return;
+  if(isMobile()){ document.body.classList.add('m-thread'); document.body.classList.remove('m-ctx'); }   // full-screen thread on phone
   renderNav();renderIList();renderThread(l);renderICtx(l);   // opening does NOT mark read — Ben marks read explicitly
   if(LIVE) fetchSuggestions(l);   // Jake drafts a reply from the playbook + live thread
   if(LIVE && !l.msgs){
@@ -701,11 +762,13 @@ function renderThread(l){
   }
   th.innerHTML=`
    <div class="t-head">
+     <button class="btn sm m-only" onclick="document.body.classList.remove('m-thread','m-ctx')" title="Back">‹</button>
      <div class="ava" style="width:40px;height:40px;border-radius:11px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}</div>
-     <div><div style="font-weight:700;font-size:15px">${esc(l.name)}</div><div class="muted" style="font-size:11.5px">${l.plat==='ig'?'Instagram':'Facebook'} · ${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
+     <div style="min-width:0"><div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.name)}</div><div class="muted" style="font-size:11.5px">${l.plat==='ig'?'Instagram':'Facebook'} · ${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
      <div style="margin-left:auto;display:flex;gap:8px">
-       <button class="btn sm" onclick="quickBook()">📅 Send booking link</button>
-       <button class="btn sm" onclick="quickTag()" title="Hand this lead to the Appointwise DM Closer">🎯 Tag closer</button>
+       <button class="btn sm m-only" onclick="document.body.classList.toggle('m-ctx')" title="Lead info">ℹ</button>
+       <button class="btn sm" onclick="quickBook()">📅 <span class="d-only-inline">Send booking link</span></button>
+       <button class="btn sm" onclick="quickTag()" title="Hand this lead to the Appointwise DM Closer">🎯 <span class="d-only-inline">Tag closer</span></button>
      </div>
    </div>
    <div class="msgs" id="msgs">${msgsHtml}</div>

@@ -895,13 +895,22 @@ async function quickBook(){
   } else toast('Booking link sent · '+l.name+' (demo)');
 }
 async function quickTag(){ const l=curLead(); if(l) await tagCloser(l.id, true); }
-// Hand a lead to the Appointwise DM Closer by tagging "closer" in HighLevel.
+// Force HighLevel to emit a fresh "tag added" event so an Appointwise/workflow trigger
+// re-fires EVEN IF the contact already had the tag — re-adding an existing tag is a silent
+// no-op in HL (the trigger only fires on a genuinely new tag), which is why a re-tagged
+// lead never gets picked up. Remove it, then add it back.
+async function forceTag(contactId, tag){
+  try{ await post({action:'tag',contactId,tag,remove:true}); }catch(e){}
+  await new Promise(r=>setTimeout(r,450));   // let HL register the removal before re-adding
+  return await post({action:'tag',contactId,tag});
+}
+// Hand a lead to the Appointwise DM Closer by tagging "closer" in HighLevel (force re-trigger).
 async function tagCloser(id, fromInbox){
   const l=LEADS.find(x=>x.id===id); if(!l)return;
   const tag='closer';
   if(!l.tags.includes(tag)) l.tags.push(tag);
   if(fromInbox) renderICtx(l); else closeLeadMenu();
-  if(LIVE){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false) toast('Tagged for Appointwise closer · '+l.name); else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
+  if(LIVE){ try{const r=await forceTag(l.contactId,tag); if(r&&r.ok!==false){ toast('Handed to Appointwise closer · '+l.name); logAct('tag_added',l.contactId,{tag}); } else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
   else toast('Tagged closer · '+l.name+' (demo)');
 }
 
@@ -1084,7 +1093,11 @@ async function addLeadTag(id,tag){
   if(!l.tags) l.tags=[];
   if(!l.tags.map(t=>t.toLowerCase()).includes(tag.toLowerCase())) l.tags.push(tag);
   renderLeadMenu();
-  if(LIVE&&l.contactId){ try{const r=await post({action:'tag',contactId:l.contactId,tag}); if(r&&r.ok!==false){ toast((tag.toLowerCase()==='closer'?'Tagged for Appointwise closer · ':'Tagged "'+tag+'" · ')+l.name); logAct('tag_added',l.contactId,{tag}); } else toastErr('Tag failed · '+l.name);}catch(e){toastErr('Tag failed · '+l.name);} }
+  if(LIVE&&l.contactId){ try{
+    const isCloser=tag.toLowerCase()==='closer';
+    const r=isCloser? await forceTag(l.contactId,tag) : await post({action:'tag',contactId:l.contactId,tag});
+    if(r&&r.ok!==false){ toast((isCloser?'Handed to Appointwise closer · ':'Tagged "'+tag+'" · ')+l.name); logAct('tag_added',l.contactId,{tag}); } else toastErr('Tag failed · '+l.name);
+  }catch(e){toastErr('Tag failed · '+l.name);} }
 }
 function addLeadTagInput(id){ const i=document.getElementById('lmTag'); const v=(i?.value||'').trim(); if(v){ if(i)i.value=''; addLeadTag(id,v); } }
 async function removeLeadTagAt(id,idx){

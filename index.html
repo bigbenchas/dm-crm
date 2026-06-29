@@ -866,11 +866,12 @@ function sendFailed(l,msgObj,val,res,prev){
   markRead([l.id],false);                                  // not actually handled
   renderThread(l); renderIList(); renderNav();
   const rb=document.getElementById('reply'); if(rb){ rb.value=val; grow(rb); rb.focus(); }   // restore the draft into the fresh composer
-  const raw=hlErrMsg(res).toLowerCase();
+  const real=hlErrMsg(res); const raw=real.toLowerCase();
   let why;
-  if(/24|window|outside|allowed window|messaging window|re-?engag|standard messaging/.test(raw)) why='⏳ Outside Instagram’s 24-hour reply window — they have to message you again before you can DM';
-  else if(/rate|too many|limit|throttl|429/.test(raw)) why='🐢 Instagram rate limit hit — wait a few minutes, then send again';
-  else why='Send failed'+(hlErrMsg(res)?': '+hlErrMsg(res).slice(0,100):' — Instagram rejected it');
+  if(/window|outside|allowed|re-?engag|7 ?day|24 ?hour|too old|expired message|outside.*window/.test(raw)) why='⏳ Outside Instagram’s reply window (you get 7 days after their last DM) — they need to message you again'+(real?' · '+real.slice(0,70):'');
+  else if(/rate|too many|limit|throttl|429/.test(raw)) why='🐢 Instagram rate limit — wait a few minutes, then send again';
+  else if(/connect|disconnect|token|reauth|integration|not authorized|unauthor/.test(raw)) why='🔌 Instagram/HighLevel connection issue — reconnect the IG channel in HighLevel'+(real?' · '+real.slice(0,70):'');
+  else why='Send failed'+(real?': '+real.slice(0,120):' — Instagram/HighLevel rejected it (no reason given)');
   toastErr(why+' · '+l.name);
 }
 // Jake learns from every reply Coach Ben sends + how he edits Jake's drafts. Fire-and-forget.

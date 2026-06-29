@@ -601,8 +601,28 @@ async function loadApptMap(){ const sb=await getSB(); if(!sb)return; try{ const 
 async function pushAppt(contactId, outcome){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(outcome){ await sb.from('crm_appt').upsert({contact_id:contactId,outcome,ts:Date.now(),updated_at:new Date().toISOString()}); } else { await sb.from('crm_appt').delete().eq('contact_id',contactId); } }catch(e){} }
 function apptOf(l){ return (APPT[l.id]||{}).outcome||''; }
 function setAppt(id, outcome){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=apptOf(l)===outcome?'':outcome; if(nv) APPT[id]={outcome:nv,ts:Date.now()}; else delete APPT[id]; saveAppt(); pushAppt(l.contactId,nv); if(nv) logAct('call_'+nv,l.contactId);
+  logOutcome(l,'showed', nv==='showed'); logOutcome(l,'noshow', nv==='noshow');   // feed monthly KPIs
   toast((nv==='showed'?'Marked showed · ':nv==='noshow'?'Marked no-show · ':'Outcome cleared · ')+l.name); refreshToday();
-  const el=document.getElementById('lmAppt'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadAppt(ll); } }
+  const el=document.getElementById('lmAppt'); if(el&&lmId){ const ll=LEADS.find(x=>x.id===lmId); if(ll)renderLeadAppt(ll); } if(cur==='analytics')render(); }
+// ---- Monthly outcome funnel (booked → showed/no-show → sold/lost). Shared store crm_outcome, keyed (contact,kind). ----
+const ymNow=()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+const ymOf=ts=>{ const d=new Date(ts||Date.now()); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+let OUTCOMES=[];
+async function loadOutcomes(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_outcome').select('contact_id,kind,ts,ym'); OUTCOMES=data||[]; }catch(e){} }
+async function logOutcome(l, kind, on){ if(!l)return; const cid=l.contactId; if(!cid)return;
+  OUTCOMES=OUTCOMES.filter(o=>!(o.contact_id===cid&&o.kind===kind));
+  if(on!==false) OUTCOMES.push({contact_id:cid,kind,ts:Date.now(),ym:ymNow()});
+  const sb=await getSB(); if(sb&&LIVE){ try{ if(on!==false){ await sb.from('crm_outcome').upsert({contact_id:cid,kind,name:l.name||null,ts:Date.now(),ym:ymNow(),updated_at:new Date().toISOString()}); } else { await sb.from('crm_outcome').delete().eq('contact_id',cid).eq('kind',kind); } }catch(e){} } }
+function outcomeOf(l, kind){ return !!(l && OUTCOMES.some(o=>o.contact_id===l.contactId&&o.kind===kind)); }
+function markBooked(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; const on=!outcomeOf(l,'booked'); logOutcome(l,'booked',on); logAct('call_booked',l.contactId); toast((on?'📅 Booked logged · ':'Booked cleared · ')+l.name); if(lmId)renderLeadAppt(LEADS.find(x=>x.id===lmId)); if(cur==='analytics')render(); }
+function markLost(id){ const l=LEADS.find(x=>x.id===id); if(!l)return; const on=!outcomeOf(l,'lost'); logOutcome(l,'lost',on); logAct('lost',l.contactId); toast((on?'Marked lost · ':'Lost cleared · ')+l.name); if(lmId)renderLeadAppt(LEADS.find(x=>x.id===lmId)); if(cur==='analytics')render(); }
+function monthlyKPIs(nMonths){
+  const map={}; OUTCOMES.forEach(o=>{ const ym=o.ym||ymOf(o.ts); (map[ym]=map[ym]||{booked:0,showed:0,noshow:0,sold:0,lost:0}); if(map[ym][o.kind]!=null) map[ym][o.kind]++; });
+  const rev={}; Object.values(SALES).forEach(s=>{ const ym=ymOf(s.ts); rev[ym]=(rev[ym]||0)+(s.amount||0); });
+  const yms=[...new Set([...Object.keys(map),...Object.keys(rev),ymNow()])].sort().reverse().slice(0,nMonths||6);
+  return yms.map(ym=>{ const m=map[ym]||{booked:0,showed:0,noshow:0,sold:0,lost:0}; const shown=m.showed+m.noshow;
+    return { ym, booked:m.booked, showed:m.showed, noshow:m.noshow, sold:m.sold, lost:m.lost, revenue:rev[ym]||0,
+      showRate: shown?Math.round(m.showed/shown*100):null, closeRate: m.showed?Math.round(m.sold/m.showed*100):null }; }); }
 function showStats(){ const booked=LEADS.filter(l=>!isClient(l)&&(l.group==='booked'||l.booked)); let showed=0,noshow=0; booked.forEach(l=>{const o=apptOf(l); if(o==='showed')showed++; else if(o==='noshow')noshow++;}); const rate=(showed+noshow)?Math.round(showed/(showed+noshow)*100):null; return {booked:booked.length,showed,noshow,rate}; }
 // New-client plan (what each sign-up actually pays) — shared store crm_sale, so revenue is accurate.
 // Two plans: month-to-month ($350/mo, recurring) and prep (one-time $1,200 paid in full).
@@ -612,7 +632,7 @@ function saveSales(){ try{ localStorage.setItem('bb_sales',JSON.stringify(SALES)
 async function loadSales(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_sale').select('contact_id,plan,amount,ts'); SALES={}; (data||[]).forEach(r=>{ if(r.plan) SALES[r.contact_id]={plan:r.plan,amount:Number(r.amount)||(PLANS[r.plan]?.amount||0),ts:Number(r.ts)||0}; }); saveSales(); }catch(e){} }
 async function pushSale(contactId, plan){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ if(plan){ await sb.from('crm_sale').upsert({contact_id:contactId,plan,amount:PLANS[plan]?.amount||0,ts:Date.now(),updated_at:new Date().toISOString()}); } else { await sb.from('crm_sale').delete().eq('contact_id',contactId); } }catch(e){} }
 function planOf(l){ return (SALES[l.id]||{}).plan||''; }
-function setSale(id, plan){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=planOf(l)===plan?'':plan; if(nv) SALES[id]={plan:nv,amount:PLANS[nv].amount,ts:Date.now()}; else delete SALES[id]; saveSales(); pushSale(l.contactId,nv); if(nv) logAct('sale_'+nv,l.contactId); toast((nv?'Logged '+PLANS[nv].label+' · ':'Plan cleared · ')+l.name); if(cur==='analytics')render(); }
+function setSale(id, plan){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=planOf(l)===plan?'':plan; if(nv) SALES[id]={plan:nv,amount:PLANS[nv].amount,ts:Date.now()}; else delete SALES[id]; saveSales(); pushSale(l.contactId,nv); if(nv) logAct('sale_'+nv,l.contactId); logOutcome(l,'sold',!!nv); if(nv) logOutcome(l,'lost',false); toast((nv?'Logged '+PLANS[nv].label+' · ':'Plan cleared · ')+l.name); if(cur==='analytics')render(); if(lmId)renderLeadAppt(LEADS.find(x=>x.id===lmId)); }
 // Recorded sign-up revenue: prep = one-time cash, m2m = monthly recurring (MRR).
 function saleStats(){ const clients=LEADS.filter(isClient); let m2m=0,prep=0,classified=0; clients.forEach(l=>{ const p=planOf(l); if(p==='m2m'){m2m++;classified++;} else if(p==='prep'){prep++;classified++;} }); return { clients:clients.length, m2m, prep, classified, unclassified:clients.length-classified, mrr:m2m*PLANS.m2m.amount, prepCash:prep*PLANS.prep.amount }; }
 // Per-lead AUTO-REPLY (the engine runs Ben's DM script automatically). Shared store crm_auto, OFF by default.
@@ -1131,12 +1151,19 @@ function renderLeadActivity(l){ const el=document.getElementById('lmActivity'); 
 async function loadLeadActivity(l){ if(!l)return; l._acts=undefined; renderLeadActivity(l); const sb=await getSB(); if(!sb||!l.contactId){ l._acts=[]; renderLeadActivity(l); return; } try{ const {data}=await sb.from('crm_activity').select('type,meta,ts').eq('contact_id',l.contactId).order('ts',{ascending:false}).limit(25); l._acts=data||[]; }catch(e){ l._acts=[]; } renderLeadActivity(l); }
 function renderLeadAppt(l){
   const el=document.getElementById('lmAppt'); if(!el)return;
-  if(!(l.group==='booked'||l.booked||isClient(l))){ el.innerHTML=''; return; }   // only for booked/clients
-  const o=apptOf(l);
-  el.innerHTML=`<div class="sec" style="padding:10px 0 4px"><h4>Call outcome</h4><div style="display:flex;gap:6px">
-    <button class="btn xs" style="${o==='showed'?'background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4);color:#9be8c0':''}" onclick="setAppt('${l.id}','showed')">✓ Showed</button>
-    <button class="btn xs" style="${o==='noshow'?'background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.4);color:#f87171':''}" onclick="setAppt('${l.id}','noshow')">✗ No-show</button>
-  </div></div>`;
+  const o=apptOf(l); const on=(b)=>b?'background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4);color:#9be8c0':''; const onR=(b)=>b?'background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.4);color:#f87171':'';
+  const sold=planOf(l);
+  el.innerHTML=`<div class="sec" style="padding:10px 0 4px"><h4>Call funnel <span class="muted" style="font-weight:400">(feeds monthly KPIs)</span></h4>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="btn xs" style="${on(outcomeOf(l,'booked'))}" onclick="markBooked('${l.id}')">📅 Booked</button>
+      <button class="btn xs" style="${on(o==='showed')}" onclick="setAppt('${l.id}','showed')">✓ Showed</button>
+      <button class="btn xs" style="${onR(o==='noshow')}" onclick="setAppt('${l.id}','noshow')">✗ No-show</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn xs" style="${on(sold==='m2m')}" onclick="setSale('${l.id}','m2m')">💰 $350/mo</button>
+      <button class="btn xs" style="${on(sold==='prep')}" onclick="setSale('${l.id}','prep')">💰 $1,200</button>
+      <button class="btn xs" style="${onR(outcomeOf(l,'lost'))}" onclick="markLost('${l.id}')">✗ Lost</button>
+    </div></div>`;
 }
 // ---- Account notes (synced to HighLevel) ----
 function renderLeadNotes(l){
@@ -1337,6 +1364,27 @@ function messageNowCard(n){
    </div>`;
 }
 
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtMonth(ym){ const p=(ym||'').split('-'); return p.length===2?(MON[(+p[1])-1]+" '"+p[0].slice(2)):ym; }
+function monthlyKPICard(){
+  const rows=monthlyKPIs(6);
+  const c=rows[0]||{ym:ymNow(),booked:0,showed:0,noshow:0,sold:0,lost:0,revenue:0,showRate:null,closeRate:null};
+  const tile=(label,val,sub,color)=>`<div class="panel-card kpi"><div class="label">${label}</div><div class="val"${color?` style="color:${color}"`:''}>${val}</div><div class="delta flat">${sub}</div></div>`;
+  return `<div class="panel-card" style="margin-bottom:16px">
+    <div class="ph"><span>📆</span><h3>Monthly KPIs</h3><span class="muted" style="margin-left:auto;font-size:11px">${fmtMonth(c.ym)} · booked → showed → sold / lost</span></div>
+    <div class="grid" style="grid-template-columns:repeat(5,1fr);gap:10px;margin:6px 0 12px">
+      ${tile('Calls booked',c.booked,'this month','')}
+      ${tile('Showed',c.showed,(c.showRate!=null?c.showRate+'% show rate':'—'),'#9be8c0')}
+      ${tile('No-show',c.noshow,'missed','#f7c065')}
+      ${tile('Sold',c.sold,(c.closeRate!=null?c.closeRate+'% close rate':fmtMoney(c.revenue)),'#4ade80')}
+      ${tile('Lost',c.lost,'didn’t close','#f87171')}
+    </div>
+    ${rows.length>1?`<div class="panel-card" style="overflow-x:auto;padding:6px 10px"><table style="width:100%;font-size:12px"><thead><tr style="color:var(--muted);text-align:right"><th style="text-align:left;padding-bottom:6px">Month</th><th>Booked</th><th>Showed</th><th>No-show</th><th>Sold</th><th>Lost</th><th>Show%</th><th>Close%</th><th>Revenue</th></tr></thead>
+      <tbody>${rows.map(m=>`<tr style="text-align:right"><td style="text-align:left;color:var(--muted)">${fmtMonth(m.ym)}</td><td>${m.booked}</td><td style="color:#9be8c0">${m.showed}</td><td style="color:#f7c065">${m.noshow}</td><td style="color:#4ade80">${m.sold}</td><td style="color:#f87171">${m.lost}</td><td>${m.showRate!=null?m.showRate+'%':'—'}</td><td>${m.closeRate!=null?m.closeRate+'%':'—'}</td><td>${fmtMoney(m.revenue)}</td></tr>`).join('')}</tbody></table></div>`:''}
+    <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">Log each lead's outcome (📅 Booked · ✓ Showed · 💰 Sold · ✗ Lost on their card) and it rolls up here by month. Show rate = showed ÷ (showed + no-show). Close rate = sold ÷ showed.</div>
+  </div>`;
+}
+
 function vAnalytics(v){
   const st=outcomeStats();
   const sale=saleStats();
@@ -1362,6 +1410,7 @@ function vAnalytics(v){
        .map(k=>`<div class="panel-card kpi"><div class="label">${k[0]}</div><div class="val">${k[1]}</div><div class="delta ${k[3]}">${k[2]}</div></div>`).join('')}
    </div>
    ${messageNowCard(10)}
+   ${monthlyKPICard()}
    <div class="panel-card" style="margin-bottom:16px">
      <div class="ph"><span>🧾</span><h3>New sign-ups — plan &amp; revenue</h3><span class="muted" style="margin-left:auto;font-size:11px">${sale.classified}/${sale.clients} set${sale.unclassified?` · ${sale.unclassified} to set`:''}</span></div>
      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:10px;margin:6px 0 12px">
@@ -1508,7 +1557,7 @@ async function refreshVoice(){ const s=document.getElementById('voiceStatus'); i
   setTimeout(()=>{const s2=document.getElementById('voiceStatus');if(s2&&s2.textContent.indexOf('Learning')<0)s2.textContent='';},3500);
 }
 async function savePlaybook(){ const t=document.getElementById('jakePb'),s=document.getElementById('pbStatus'); if(!t)return; s.textContent='Saving…'; try{const r=await post({action:'setconfig',playbook:t.value}); s.textContent=(r&&r.ok!==false)?'Saved ✓ — new suggestions use this now':'Save failed'; setTimeout(()=>{if(s)s.textContent='';},3000);}catch(e){s.textContent='Save failed';} }
-async function manualRefresh(){ await Promise.all([loadLeads(),loadReadMap(),loadFollowMap(),loadApptMap(),loadNames(),loadSales(),loadAuto()]); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
+async function manualRefresh(){ await Promise.all([loadLeads(),loadReadMap(),loadFollowMap(),loadApptMap(),loadNames(),loadSales(),loadAuto(),loadOutcomes()]); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
 
 /* ---------------- JAKE (AI assistant) ---------------- */
 let jakeMsgs=[], jakeBusy=false;
@@ -1593,6 +1642,7 @@ async function startRealtime(){
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_appt'},()=>{ loadApptMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_sale'},()=>{ loadSales().then(()=>{ if(cur==='analytics')render(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_auto'},()=>{ loadAuto().then(()=>{ renderNav(); if(cur==='inbox'){ const al=curLead(); if(al){ renderICtx(al); renderThread(al); } } }); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'crm_outcome'},()=>{ loadOutcomes().then(()=>{ if(cur==='analytics')render(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_name'},()=>{ loadNames().then(()=>{ lastSig=''; if(cur==='inbox')renderIList(); else render(); }); })
       .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
   }catch(e){ window.__rtStatus='error'; }
@@ -1675,12 +1725,12 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap(), loadActivityToday(), loadNames(), loadSales(), loadAuto()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap(), loadActivityToday(), loadNames(), loadSales(), loadAuto(), loadOutcomes()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   loadMetricsTrend().then(()=>{ snapshotMetrics(); if(cur==='analytics')render(); });   // daily outcome snapshot + trend
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
-  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();await loadNames();await loadSales();await loadAuto();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
+  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();await loadNames();await loadSales();await loadAuto();await loadOutcomes();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

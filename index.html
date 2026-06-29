@@ -845,7 +845,8 @@ async function sendReply(){
   const r=document.getElementById('reply');const val=r.value.trim();if(!val)return;
   const l=curLead();
   const usedSug=l._usedSug||''; const usedMode=(l._jake&&l._jake.mode)||'';
-  l.msgs=l.msgs||[];l.msgs.push({who:'us',ai:0,t:val,time:'Just now'});
+  const wasUnread=l.unread, wasNeeds=l.needs, wasDir=l.lastDir, wasLastMsg=l.lastMessage;
+  l.msgs=l.msgs||[]; const msgObj={who:'us',ai:0,t:val,time:'Just now'}; l.msgs.push(msgObj);
   markRead([l.id],true);   // replying = handled: clears unread + needs reply, persists to the shared store
   l.needs=false;l.unread=false;l.lastMessage=val;l.lastDir='outbound';
   l._usedSug=''; l._jake=undefined;   // next open re-drafts fresh, using what Jake just learned
@@ -853,9 +854,24 @@ async function sendReply(){
   if(LIVE){
     try{const res=await post({action:'send',contactId:l.contactId,channel:l.plat==='fb'?'FB':'IG',message:val});
       if(res&&res.ok!==false){ toast('Reply sent · '+l.name); learnFromSend(l.contactId,val,usedSug,usedMode); logAct('reply_sent',l.contactId); }
-      else toastErr('Send failed · '+l.name);}
-    catch(e){toastErr('Send failed · '+l.name);}
+      else sendFailed(l,msgObj,val,res,{wasUnread,wasNeeds,wasDir,wasLastMsg}); }
+    catch(e){ sendFailed(l,msgObj,val,{error:String(e)},{wasUnread,wasNeeds,wasDir,wasLastMsg}); }
   } else toast('Reply queued · '+l.name+' (demo)');
+}
+function hlErrMsg(res){ const r=res&&res.result; let m=(r&&(r.message||r.msg||r.error))||(res&&res.error)||''; if(typeof r==='string'&&r) m=r; return String(m||''); }
+// A send that HighLevel/Instagram rejected: undo the optimistic "sent" + read state, restore the draft, explain why.
+function sendFailed(l,msgObj,val,res,prev){
+  if(l.msgs){ const i=l.msgs.indexOf(msgObj); if(i>=0) l.msgs.splice(i,1); }
+  l.lastDir=prev.wasDir; l.lastMessage=prev.wasLastMsg; l.needs=prev.wasNeeds; l.unread=prev.wasUnread;
+  markRead([l.id],false);                                  // not actually handled
+  renderThread(l); renderIList(); renderNav();
+  const rb=document.getElementById('reply'); if(rb){ rb.value=val; grow(rb); rb.focus(); }   // restore the draft into the fresh composer
+  const raw=hlErrMsg(res).toLowerCase();
+  let why;
+  if(/24|window|outside|allowed window|messaging window|re-?engag|standard messaging/.test(raw)) why='⏳ Outside Instagram’s 24-hour reply window — they have to message you again before you can DM';
+  else if(/rate|too many|limit|throttl|429/.test(raw)) why='🐢 Instagram rate limit hit — wait a few minutes, then send again';
+  else why='Send failed'+(hlErrMsg(res)?': '+hlErrMsg(res).slice(0,100):' — Instagram rejected it');
+  toastErr(why+' · '+l.name);
 }
 // Jake learns from every reply Coach Ben sends + how he edits Jake's drafts. Fire-and-forget.
 async function learnFromSend(contactId,sent,suggestion,mode){
@@ -1275,7 +1291,7 @@ async function refreshVoice(){ const s=document.getElementById('voiceStatus'); i
   setTimeout(()=>{const s2=document.getElementById('voiceStatus');if(s2&&s2.textContent.indexOf('Learning')<0)s2.textContent='';},3500);
 }
 async function savePlaybook(){ const t=document.getElementById('jakePb'),s=document.getElementById('pbStatus'); if(!t)return; s.textContent='Saving…'; try{const r=await post({action:'setconfig',playbook:t.value}); s.textContent=(r&&r.ok!==false)?'Saved ✓ — new suggestions use this now':'Save failed'; setTimeout(()=>{if(s)s.textContent='';},3000);}catch(e){s.textContent='Save failed';} }
-async function manualRefresh(){ await loadLeads(); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
+async function manualRefresh(){ await Promise.all([loadLeads(),loadReadMap(),loadFollowMap(),loadApptMap(),loadNames()]); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
 
 /* ---------------- JAKE (AI assistant) ---------------- */
 let jakeMsgs=[], jakeBusy=false;
@@ -1346,7 +1362,7 @@ function applyRefresh(){
   const v2=document.getElementById('view'); if(v2)v2.scrollTop=top;
   const b2=document.getElementById('board'); if(b2)b2.scrollLeft=left;
 }
-function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();if(authFailed){logout();return;}applyRefresh();},700);}
+function refreshSoon(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{await loadLeads();await loadReadMap();await loadNames();if(authFailed){logout();return;}applyRefresh();},700);}
 let SB=null;
 async function getSB(){ if(SB)return SB; try{ const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2'); SB=createClient(CONFIG.supabaseUrl,CONFIG.anonKey); }catch(e){} return SB; }
 async function startRealtime(){

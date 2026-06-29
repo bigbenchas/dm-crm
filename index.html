@@ -113,6 +113,8 @@
   .kcard{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;cursor:grab;transition:.14s;position:relative}
   .kcard:hover{background:var(--card-hover);border-color:#33405a;transform:translateY(-2px);box-shadow:var(--shadow)}
   .kcard.dragging{opacity:.5}
+  .kmenu{background:none;border:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 5px;border-radius:6px;margin:-4px -4px -4px 0}
+  .kmenu:hover{background:rgba(255,255,255,.08);color:var(--text)}
   .kcard .top{display:flex;align-items:center;gap:10px}
   .kcard .nm{font-size:13px;font-weight:700}.kcard .hd{font-size:10.5px;color:var(--muted);margin-top:1px}
   .kcard .snip{font-size:11.5px;color:var(--muted);margin-top:9px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
@@ -1019,10 +1021,10 @@ function kcard(l){
      <div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="hd">${esc(l.loc)} · ${esc(l.time)}</div></div>
      ${scpill2(l.score)}</div>
    <div class="snip">${esc(l.lastMessage)||'<span class="muted">No messages</span>'}</div>
-   <div class="foot"><span>🕐 ${esc(l.time)}</span>${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(needsEff(l)?'<span style="color:#f7c065">needs reply</span>':'')}</div>`;
+   <div class="foot"><span>🕐 ${esc(l.time)}</span><span style="display:flex;align-items:center;gap:9px">${(l.group==='booked'||l.booked)?`<span style="color:#4ade80">📅 booked</span>`:(needsEff(l)?'<span style="color:#f7c065">needs reply</span>':'')}<button class="kmenu" title="Actions (tags, stage, notes, remove)" onclick="event.stopPropagation();openLeadMenu('${l.id}')">⋯</button></span></div>`;
   c.addEventListener('dragstart',e=>{e.dataTransfer.setData('id',l.id);c.classList.add('dragging');startDragScroll();});
   c.addEventListener('dragend',()=>{c.classList.remove('dragging');stopDragScroll();});
-  c.addEventListener('click',()=>openLeadMenu(l.id));  // open the lead action card
+  c.addEventListener('click',()=>openLead(l.id));  // open the conversation directly; ⋯ opens the action menu
   return c;
 }
 

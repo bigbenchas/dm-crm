@@ -473,7 +473,6 @@ const VIEWS=[
  {id:'pipeline',name:'Pipeline',ic:'▤'},
  {id:'leads',name:'Leads',ic:'☷'},
  {id:'analytics',name:'Analytics',ic:'📈'},
- {id:'automations',name:'Automations',ic:'⚡'},
  {id:'settings',name:'Settings',ic:'⚙'},
 ];
 function isMobile(){ return window.matchMedia('(max-width:760px)').matches; }
@@ -498,7 +497,7 @@ function go(id){cur=id;document.body.classList.remove('m-thread','m-ctx');render
 
 const TITLES={dashboard:['Dashboard','Your sales command center'],today:['Today','Your daily action queue — work it to zero'],jake:['Ask Jake','Your AI sales assistant — acts on live HighLevel'],inbox:['Inbox','Every DM, one structured engine'],
  pipeline:['Pipeline','Drag leads through your funnel'],leads:['Leads','All contacts, scored by AI'],
- analytics:['Analytics','Where deals leak and win'],automations:['Automations','Your AI on autopilot'],settings:['Settings','Connections & preferences']};
+ analytics:['Analytics','Where deals leak and win'],automations:['Settings','Automations, connections & your script'],settings:['Settings','Automations, connections & your script']};
 
 function render(){
   const [t,s]=TITLES[cur];document.getElementById('ptitle').textContent=t;document.getElementById('psub').textContent=s;
@@ -514,7 +513,7 @@ function render(){
     </div>`;
     return;
   }
-  ({dashboard:vDashboard,today:vToday,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vAutomations,settings:vSettings,jake:vJake}[cur])(v);
+  ({dashboard:vDashboard,today:vToday,inbox:vInbox,pipeline:vPipeline,leads:vLeads,analytics:vAnalytics,automations:vSettings,settings:vSettings,jake:vJake}[cur])(v);
 }
 
 /* ---------------- score widgets ---------------- */
@@ -1483,7 +1482,7 @@ function vAutomations(v){
 function vSettings(v){
   v.innerHTML=`<div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
     <div class="panel-card"><div class="ph"><span>🔌</span><h3>Connections</h3></div>
-      ${[['HighLevel',(LIVE?'Connected · live sync':'Unreachable — using demo data'),(LIVE?'Connected':'Offline'),(LIVE?'#4ade80':'#f87171')],['DM Pipeline','Auto-resolved · '+STAGES.length+' stages','Mapped','#4ade80'],['Instagram','@bigbenchas · DMs','Active','#4ade80'],['Appointwise','DM Closer AI','Active','#4ade80'],['Supabase Realtime','Instant webhook updates',(LIVE?'On':'Off'),(LIVE?'#4ade80':'#7A8699')]]
+      ${[['HighLevel',(LIVE?'Connected · live sync':'Unreachable — using demo data'),(LIVE?'Connected':'Offline'),(LIVE?'#4ade80':'#f87171')],['DM Pipeline','Auto-resolved · '+STAGES.length+' stages','Mapped','#4ade80'],['Instagram','@bigbenchas · DMs','Active','#4ade80'],['Auto-reply engine','Runs your DM script · '+autoCount()+' on',(autoCount()?'Active':'Idle'),(autoCount()?'#4ade80':'#7A8699')],['Supabase Realtime','Instant webhook updates',(LIVE?'On':'Off'),(LIVE?'#4ade80':'#7A8699')]]
         .map(c=>`<div class="insight"><div class="ic" style="background:rgba(34,197,94,.12)">🔗</div><div style="flex:1"><div class="it">${c[0]}</div><div class="id">${c[1]}</div></div><span class="stage-chip" style="align-self:center;background:rgba(34,197,94,.15);color:${c[3]}">● ${c[2]}</span></div>`).join('')}
       <div class="kv" style="margin-top:8px"><span class="k">Backend</span><span class="v" style="font-size:11px">${esc(CONFIG.fnUrl)}</span></div>
       ${syncedAt?`<div class="kv"><span class="k">Last synced</span><span class="v">${fmtTime(syncedAt)}</span></div>`:''}
@@ -1504,9 +1503,12 @@ function vSettings(v){
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn primary sm" onclick="savePlaybook()">Save playbook</button><span id="pbStatus" class="muted" style="font-size:11px"></span></div>
     </div>
     <div class="panel-card" style="margin-top:16px">
-      <div class="ph"><span>🤖</span><h3>Auto-reply &amp; call pitch</h3><span class="muted" style="margin-left:auto;font-size:11px">runs your DM script automatically</span></div>
-      <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">When you flip <b style="color:var(--text)">Auto-reply ON</b> for a lead (in their conversation), the engine runs your DM script for them automatically — warm-up questions, your transition line, the price deflection — and pitches the call using the message below. It never auto-sends anything personal/sensitive, and pauses the moment you jump in. Master switch:</p>
-      <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:14px"><button class="atog" id="autoMaster" onclick="toggleMaster()"><span class="knob"></span></button> <span id="autoMasterLbl">Auto-reply engine</span></label>
+      <div class="ph"><span>🤖</span><h3>Automation · Auto-reply</h3><span class="muted" style="margin-left:auto;font-size:11px">${autoCount()} lead${autoCount()===1?'':'s'} on auto-reply</span></div>
+      <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Flip <b style="color:var(--text)">Auto-reply ON</b> for a lead (in their conversation) and the engine runs your DM script for them automatically, all the way to a booked call. It never auto-sends anything personal/sensitive, and pauses the moment you jump in. Master switch:</p>
+      <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:12px"><button class="atog" id="autoMaster" onclick="toggleMaster()"><span class="knob"></span></button> <span id="autoMasterLbl">Auto-reply engine</span></label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px">
+        ${['Warm-up / opener','Transition line','Qualify (struggle, goal, help)','Pitch the 15 min call','Send booking link','Follow-ups (30/60/90d)'].map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)"><span style="width:18px;height:18px;border-radius:50%;background:rgba(34,197,94,.15);color:#4ade80;display:grid;place-items:center;font-size:9px;font-weight:900">${i+1}</span>${s}</div>`).join('')}
+      </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Your call-pitch message — sent once a lead is qualified (use <b>[Name]</b> and <b>[LINK]</b>)</div>
       <textarea id="offerScript" class="inp" style="height:84px;font-size:12.5px;line-height:1.5;resize:vertical" placeholder="e.g. Awesome [Name], I'd love to hop on a quick call to map out a plan for you, no pressure at all. Grab whatever time works here [LINK]"></textarea>
       <div style="font-size:12px;color:var(--muted);margin:10px 0 4px">Booking link</div>

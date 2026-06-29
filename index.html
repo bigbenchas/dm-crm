@@ -113,6 +113,13 @@
   .kcard{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:12px;cursor:grab;transition:.14s;position:relative}
   .kcard:hover{background:var(--card-hover);border-color:#33405a;transform:translateY(-2px);box-shadow:var(--shadow)}
   .kcard.dragging{opacity:.5}
+  .btn.autoOn{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.5);color:#9be8c0}
+  .autobox{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.02)}
+  .autobox.on{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.08)}
+  .atog{flex-shrink:0;width:46px;height:26px;border-radius:14px;border:1px solid var(--border);background:#222a36;position:relative;cursor:pointer;transition:background .15s}
+  .atog.on{background:#22c55e;border-color:#22c55e}
+  .atog .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+  .atog.on .knob{left:22px}
   .kmenu{background:none;border:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 5px;border-radius:6px;margin:-4px -4px -4px 0}
   .kmenu:hover{background:rgba(255,255,255,.08);color:var(--text)}
   .kcard .top{display:flex;align-items:center;gap:10px}
@@ -608,6 +615,16 @@ function planOf(l){ return (SALES[l.id]||{}).plan||''; }
 function setSale(id, plan){ const l=LEADS.find(x=>x.id===id); if(!l)return; const nv=planOf(l)===plan?'':plan; if(nv) SALES[id]={plan:nv,amount:PLANS[nv].amount,ts:Date.now()}; else delete SALES[id]; saveSales(); pushSale(l.contactId,nv); if(nv) logAct('sale_'+nv,l.contactId); toast((nv?'Logged '+PLANS[nv].label+' · ':'Plan cleared · ')+l.name); if(cur==='analytics')render(); }
 // Recorded sign-up revenue: prep = one-time cash, m2m = monthly recurring (MRR).
 function saleStats(){ const clients=LEADS.filter(isClient); let m2m=0,prep=0,classified=0; clients.forEach(l=>{ const p=planOf(l); if(p==='m2m'){m2m++;classified++;} else if(p==='prep'){prep++;classified++;} }); return { clients:clients.length, m2m, prep, classified, unclassified:clients.length-classified, mrr:m2m*PLANS.m2m.amount, prepCash:prep*PLANS.prep.amount }; }
+// Per-lead AUTO-REPLY (the engine runs Ben's DM script automatically). Shared store crm_auto, OFF by default.
+let AUTO={}; try{ AUTO=JSON.parse(localStorage.getItem('bb_auto')||'{}'); }catch(e){ AUTO={}; }
+function saveAuto(){ try{ localStorage.setItem('bb_auto',JSON.stringify(AUTO)); }catch(e){} }
+async function loadAuto(){ const sb=await getSB(); if(!sb)return; try{ const {data}=await sb.from('crm_auto').select('contact_id,on_state'); AUTO={}; (data||[]).forEach(r=>{ if(r.on_state) AUTO[r.contact_id]=true; }); saveAuto(); }catch(e){} }
+async function pushAuto(contactId, on){ if(!LIVE||!contactId)return; const sb=await getSB(); if(!sb)return; try{ await sb.from('crm_auto').upsert({contact_id:contactId,on_state:!!on,updated_at:new Date().toISOString()}); }catch(e){} }
+function autoOf(l){ return l&&!!AUTO[l.id]; }
+async function setAuto(id, on){ const l=LEADS.find(x=>x.id===id); if(!l)return; if(on) AUTO[id]=true; else delete AUTO[id]; saveAuto(); await pushAuto(l.contactId,on); logAct(on?'auto_on':'auto_off',l.contactId); toast((on?'🤖 Auto-reply ON · ':'Auto-reply OFF · ')+l.name); if(lmId)renderLeadMenu(); if(cur==='inbox'){ const al=curLead(); if(al)renderICtx(al); } renderNav(); }
+function autoCount(){ return LEADS.filter(autoOf).length; }
+function toggleAuto(id){ const l=LEADS.find(x=>x.id===id); if(l) setAuto(id, !autoOf(l)); }
+function scriptStarted(id){ const s=STAGES.find(x=>/script started/i.test(x.name)); if(s){ jumpStage(id,s.id); } else { toast('No Script Started stage found'); } }
 const NOW=()=>Date.now();
 function hoursSince(l){ return l.lastMs? (NOW()-l.lastMs)/3.6e6 : 9999; }
 function isSnoozed(l){ const m=FOLLOW[l.id]; return !!(m && m>NOW()); }
@@ -836,8 +853,9 @@ function renderThread(l){
      <div style="min-width:0"><div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(l.name)} <button class="rn-edit" title="Rename" onclick="renameLead('${l.id}')">✎</button></div><div class="muted" style="font-size:11.5px">${NAMES[l.id]?'@'+esc(l.handle||'')+' · ':''}${l.plat==='ig'?'Instagram':'Facebook'} · ${esc(l.loc)} · ${esc(l.stageName||stLabel(l.group))}</div></div>
      <div style="margin-left:auto;display:flex;gap:8px">
        <button class="btn sm m-only" onclick="document.body.classList.toggle('m-ctx')" title="Lead info">ℹ</button>
-       <button class="btn sm" onclick="quickBook()">📅 <span class="d-only-inline">Send booking link</span></button>
-       <button class="btn sm" onclick="quickTag()" title="Hand this lead to the Appointwise DM Closer">🎯 <span class="d-only-inline">Tag closer</span></button>
+       <button class="btn sm" onclick="quickBook()">📅 <span class="d-only-inline">Booking link</span></button>
+       <button class="btn sm" onclick="scriptStarted('${l.id}')" title="Move to Script Started and run the script">📝 <span class="d-only-inline">Script Started</span></button>
+       <button class="btn sm ${autoOf(l)?'autoOn':''}" onclick="toggleAuto('${l.id}')" title="Auto-reply: run your DM script automatically for this lead">🤖 <span class="d-only-inline">${autoOf(l)?'Auto ON':'Auto-reply'}</span></button>
      </div>
    </div>
    <div class="msgs" id="msgs">${msgsHtml}</div>
@@ -859,7 +877,7 @@ function renderSugBar(l){
   const note = j&&j.note ? `<div style="font-size:10.5px;color:${j.mode==='transition'?'#9be8c0':'var(--muted)'};width:100%;margin-bottom:2px">${j.mode==='transition'?'🤝 ':''}${esc(j.note)}</div>` : '';
   const chips = sugs.map((s,i)=>`<div class="schip" onclick="useSug(${i})" title="${esc(s).replace(/"/g,'&quot;')}">✨ ${esc(s)}</div>`).join('');
   bar.innerHTML = note + `<span class="lbl">${j&&j.cached?'Jake pre-drafted ✨:':'Jake suggests:'}</span>` + (chips || `<span class="muted" style="font-size:11.5px">No draft — write your own.</span>`)
-    + (j&&j.mode==='transition'?`<button class="schip" style="color:#9be8c0;border-color:rgba(34,197,94,.35)" onclick="quickTag()">🎯 then Tag closer</button>`:'');
+    + (j&&j.mode==='offer'?`<button class="schip" style="color:#9be8c0;border-color:rgba(34,197,94,.35)" onclick="quickBook()">📅 then send booking link</button>`:'');
 }
 async function fetchSuggestions(l){
   l._jake=undefined; renderSugBar(l);
@@ -880,6 +898,10 @@ function renderICtx(l){
      <div style="font-weight:800;font-size:16px;margin-top:10px">${scLabel(l.score)} lead</div>
      <div class="muted" style="font-size:11.5px">AI lead score</div>
    </div>
+   <div class="sec"><div class="autobox ${autoOf(l)?'on':''}">
+     <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">🤖 Auto-reply ${autoOf(l)?'ON':'OFF'}</div><div class="muted" style="font-size:11px;line-height:1.4">${autoOf(l)?'Running your DM script automatically to pitch the call':'Flip on to run your DM script for this lead'}</div></div>
+     <button class="atog ${autoOf(l)?'on':''}" onclick="toggleAuto('${l.id}')" title="Toggle auto-reply"><span class="knob"></span></button>
+   </div></div>
    <div id="ctxSummary"></div>
    ${l.coach?`<div class="sec"><div class="coach"><div class="h">🤖 AI coaching</div>${esc(l.coach)}</div></div>`:''}
    <div class="sec"><h4>Score breakdown</h4>${fac}</div>
@@ -1433,6 +1455,16 @@ function vSettings(v){
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn primary sm" onclick="savePlaybook()">Save playbook</button><span id="pbStatus" class="muted" style="font-size:11px"></span></div>
     </div>
     <div class="panel-card" style="margin-top:16px">
+      <div class="ph"><span>🤖</span><h3>Auto-reply &amp; call pitch</h3><span class="muted" style="margin-left:auto;font-size:11px">runs your DM script automatically</span></div>
+      <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">When you flip <b style="color:var(--text)">Auto-reply ON</b> for a lead (in their conversation), the engine runs your DM script for them automatically — warm-up questions, your transition line, the price deflection — and pitches the call using the message below. It never auto-sends anything personal/sensitive, and pauses the moment you jump in. Master switch:</p>
+      <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:14px"><button class="atog" id="autoMaster" onclick="toggleMaster()"><span class="knob"></span></button> <span id="autoMasterLbl">Auto-reply engine</span></label>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Your call-pitch message — sent once a lead is qualified (use <b>[Name]</b> and <b>[LINK]</b>)</div>
+      <textarea id="offerScript" class="inp" style="height:84px;font-size:12.5px;line-height:1.5;resize:vertical" placeholder="e.g. Awesome [Name], I'd love to hop on a quick call to map out a plan for you, no pressure at all. Grab whatever time works here [LINK]"></textarea>
+      <div style="font-size:12px;color:var(--muted);margin:10px 0 4px">Booking link</div>
+      <input id="offerLink" class="inp" style="padding:8px 10px;font-size:12.5px;width:100%" placeholder="https://calendly.com/... or your HighLevel link">
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px"><button class="btn primary sm" onclick="saveOffer()">Save pitch</button><span id="offerStatus" class="muted" style="font-size:11px"></span></div>
+    </div>
+    <div class="panel-card" style="margin-top:16px">
       <div class="ph"><span>🧠</span><h3>Jake's learned voice</h3><span class="muted" id="voiceCount" style="margin-left:auto;font-size:11px">—</span></div>
       <p class="muted" style="font-size:12px;line-height:1.55;margin-bottom:10px">Jake learns your voice automatically from every reply you send and every edit you make to his drafts, then writes future suggestions to match. It sharpens on its own as you work, or refresh it now.</p>
       <div id="jakeVoice" style="white-space:pre-wrap;font-size:12px;line-height:1.6;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;max-height:300px;overflow:auto;color:#dfe6f2"></div>
@@ -1448,8 +1480,20 @@ function vSettings(v){
       </div>
       <div style="margin-top:12px"><button class="btn primary sm" onclick="saveGoalsFromUI()">Save targets</button> <span id="goalStatus" class="muted" style="font-size:11px;margin-left:8px"></span></div>
     </div>`;
-  loadPlaybook();
+  loadPlaybook(); loadOffer();
 }
+let _autoEnabled=true;
+async function loadOffer(){ try{const r=await authGet('?action=getoffer');const j=await r.json();
+  const s=document.getElementById('offerScript');if(s)s.value=j.script||'';
+  const l=document.getElementById('offerLink');if(l)l.value=j.link||'';
+  _autoEnabled=j.enabled!==false; paintMaster();
+}catch(e){} }
+function paintMaster(){ const m=document.getElementById('autoMaster'); if(m)m.classList.toggle('on',_autoEnabled); const ml=document.getElementById('autoMasterLbl'); if(ml)ml.textContent='Auto-reply engine '+(_autoEnabled?'ON':'OFF'); }
+function toggleMaster(){ _autoEnabled=!_autoEnabled; paintMaster(); saveOffer(); }
+async function saveOffer(){ const st=document.getElementById('offerStatus'); if(st)st.textContent='Saving…';
+  try{ const r=await post({action:'setoffer',offer_script:((document.getElementById('offerScript')||{}).value||'').trim(),booking_link:((document.getElementById('offerLink')||{}).value||'').trim(),auto_enabled:_autoEnabled});
+    if(st)st.textContent=(r&&r.ok!==false)?'Saved ✓':'Save failed'; setTimeout(()=>{if(st)st.textContent='';},3000);
+  }catch(e){ if(st)st.textContent='Save failed'; } }
 function saveGoalsFromUI(){ GOALS={ replies:Math.max(0,+(document.getElementById('gReplies').value)||0), booked:Math.max(0,+(document.getElementById('gBooked').value)||0), followups:Math.max(0,+(document.getElementById('gFollow').value)||0) }; saveGoals(); const s=document.getElementById('goalStatus'); if(s){ s.textContent='Saved ✓'; setTimeout(()=>{if(s)s.textContent='';},2500); } }
 async function loadPlaybook(){ try{const r=await authGet('?action=getconfig');const j=await r.json();
   const t=document.getElementById('jakePb');if(t)t.value=j.playbook||'';
@@ -1464,7 +1508,7 @@ async function refreshVoice(){ const s=document.getElementById('voiceStatus'); i
   setTimeout(()=>{const s2=document.getElementById('voiceStatus');if(s2&&s2.textContent.indexOf('Learning')<0)s2.textContent='';},3500);
 }
 async function savePlaybook(){ const t=document.getElementById('jakePb'),s=document.getElementById('pbStatus'); if(!t)return; s.textContent='Saving…'; try{const r=await post({action:'setconfig',playbook:t.value}); s.textContent=(r&&r.ok!==false)?'Saved ✓ — new suggestions use this now':'Save failed'; setTimeout(()=>{if(s)s.textContent='';},3000);}catch(e){s.textContent='Save failed';} }
-async function manualRefresh(){ await Promise.all([loadLeads(),loadReadMap(),loadFollowMap(),loadApptMap(),loadNames(),loadSales()]); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
+async function manualRefresh(){ await Promise.all([loadLeads(),loadReadMap(),loadFollowMap(),loadApptMap(),loadNames(),loadSales(),loadAuto()]); renderNav(); render(); toast(LIVE?'Synced with HighLevel':'Could not reach HighLevel'); }
 
 /* ---------------- JAKE (AI assistant) ---------------- */
 let jakeMsgs=[], jakeBusy=false;
@@ -1548,6 +1592,7 @@ async function startRealtime(){
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_followup'},()=>{ loadFollowMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_appt'},()=>{ loadApptMap().then(()=>{ renderNav(); if(cur==='today')render(); }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_sale'},()=>{ loadSales().then(()=>{ if(cur==='analytics')render(); }); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'crm_auto'},()=>{ loadAuto().then(()=>{ renderNav(); if(cur==='inbox'){ const al=curLead(); if(al){ renderICtx(al); renderThread(al); } } }); })
       .on('postgres_changes',{event:'*',schema:'public',table:'crm_name'},()=>{ loadNames().then(()=>{ lastSig=''; if(cur==='inbox')renderIList(); else render(); }); })
       .subscribe((status)=>{ window.__rtStatus=status; rtOn=(status==='SUBSCRIBED'); renderLiveChip(); });
   }catch(e){ window.__rtStatus='error'; }
@@ -1630,12 +1675,12 @@ async function boot(){
   if(!APP_KEY){ showLogin(); return; }
   renderNav();
   document.getElementById('view').innerHTML=`<div class="muted" style="padding:40px;text-align:center">Loading live data from HighLevel…</div>`;
-  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap(), loadActivityToday(), loadNames(), loadSales()]);
+  await Promise.all([loadLeads(), refreshStages(), loadReadMap(), loadFollowMap(), loadApptMap(), loadActivityToday(), loadNames(), loadSales(), loadAuto()]);
   if(authFailed){ logout(); return; }
   renderNav();render();lastSig=leadsSig();startRealtime();
   loadMetricsTrend().then(()=>{ snapshotMetrics(); if(cur==='analytics')render(); });   // daily outcome snapshot + trend
   clearInterval(window.__pollTimer);   // never stack timers across re-logins
-  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();await loadNames();await loadSales();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
+  window.__pollTimer=setInterval(async()=>{await loadLeads();await loadReadMap();await loadFollowMap();await loadApptMap();await loadNames();await loadSales();await loadAuto();if(authFailed){logout();return;}applyRefresh();},CONFIG.refreshMs);
 }
 boot();
 </script>

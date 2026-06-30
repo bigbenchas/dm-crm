@@ -735,7 +735,7 @@ document.addEventListener('click',e=>{ if(!e.target.closest('.snz')) document.qu
 /* ---------------- INBOX ---------------- */
 function vInbox(v){
   v.innerHTML=`<div class="inbox">
-    <div class="ilist"><div class="itabs" id="itabs"></div><div class="iconvos" id="iconvos"></div></div>
+    <div class="ilist"><div class="itabs" id="itabs"></div><div id="ibarSlot"></div><div class="iconvos" id="iconvos"></div></div>
     <div class="thread" id="thread"></div>
     <div class="ictx" id="ictx"></div>
   </div>`;
@@ -825,7 +825,8 @@ function renderIList(){
        <select class="ifilter" style="padding:4px 8px;font-size:11px" onchange="if(this.value){bulkMove(this.value);this.value='';}"><option value="">Move to…</option>${stageOpts}</select>`
        :`<button class="btn xs" onclick="markAllRead()">Mark all read</button>`}
      </span></div>`;
-  wrap.innerHTML=bar+(rows.map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');const ur=unreadEff(l);
+  const slot=document.getElementById('ibarSlot'); if(slot) slot.innerHTML=bar;   // pinned above the scroll, stays visible
+  wrap.innerHTML=(rows.map(l=>{const snip=(l.lastDir==='outbound'?'You: ':'')+(l.lastMessage||'');const ur=unreadEff(l);
    return `<div class="crow ${l.id===activeId?'active':''}" onclick="openConvo('${l.id}')">
      <input type="checkbox" class="crow-chk" ${selSet.has(l.id)?'checked':''} onclick="event.stopPropagation();toggleSel('${l.id}',this.checked)">
      <div class="ava" style="width:40px;height:40px;font-size:14px;background:${avaColor(l.name)}">${initials(l.name)}<span class="plat ${l.plat}">${l.plat==='ig'?'◈':'f'}</span></div>

@@ -279,12 +279,12 @@
   .tl-nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .m-only{display:none}
   .mnav{display:none}
-  .mnav{position:fixed;bottom:0;left:0;right:0;z-index:90;background:rgba(11,15,21,.97);backdrop-filter:blur(10px);border-top:1px solid var(--border-soft);height:62px;padding:5px 2px;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .mnav::-webkit-scrollbar{display:none}
-  .mitem{flex:1 0 auto;min-width:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--muted);font-size:9.5px;font-weight:600;cursor:pointer;border-radius:10px;position:relative;padding:2px 4px}
+  .mnav{position:fixed;bottom:0;left:0;right:0;z-index:90;background:rgba(11,15,21,.98);backdrop-filter:blur(12px);border-top:1px solid var(--border-soft);padding:6px 3px calc(6px + env(safe-area-inset-bottom));gap:1px;overflow:hidden}
+  .mitem{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:9px;font-weight:600;cursor:pointer;border-radius:10px;position:relative;padding:5px 1px}
+  .mitem>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mitem.active{color:#fff;background:var(--panel2)}
-  .mitem .ic{font-size:18px;line-height:1}
-  .mitem .badge{position:absolute;top:2px;left:calc(50% + 6px);font-size:8.5px;background:var(--accent);color:#fff;padding:0 4px;border-radius:10px;font-weight:700;line-height:15px}
+  .mitem .ic{font-size:19px;line-height:1}
+  .mitem .badge{position:absolute;top:1px;left:calc(50% + 3px);font-size:8px;background:var(--accent);color:#fff;padding:0 4px;border-radius:10px;font-weight:700;line-height:14px}
   @media(max-width:760px){
     .shell{height:100dvh}
     .side{display:none}
@@ -296,11 +296,18 @@
     .search{display:none}
     .spacer{display:none}
     #livewrap{transform:scale(.88);transform-origin:right center;margin-left:auto}
-    .view{padding:14px 12px 76px!important;overflow-x:hidden}
-    .view .grid{grid-template-columns:1fr!important;gap:12px!important}
-    .panel-card{overflow-x:auto;max-width:100%}
+    .view{padding:12px 12px calc(80px + env(safe-area-inset-bottom))!important;overflow-x:hidden}
+    .view .grid{grid-template-columns:1fr!important;gap:11px!important}
+    /* KPI stat tiles pack 2-across (compact) instead of 5 tall stacked cards */
+    .view .grid:has(> .kpi){grid-template-columns:1fr 1fr!important;gap:9px!important}
+    .kpi{padding:11px 12px!important}
+    .kpi .label{font-size:9px;letter-spacing:.3px}
+    .kpi .val{font-size:20px;margin-top:3px}
+    .kpi .delta{font-size:9px;margin-top:2px}
+    .panel-card{overflow-x:auto;max-width:100%;padding:13px}
+    .panel-card .ph{margin-bottom:10px}
     /* inbox: one pane at a time */
-    .inbox{display:block;height:calc(100dvh - 118px)}
+    .inbox{display:block;height:calc(100dvh - 120px - env(safe-area-inset-bottom))}
     .ilist{width:100%;min-width:0;border-right:none;height:100%}
     .iconvos{padding-bottom:8px}
     .thread{display:none}
@@ -318,8 +325,8 @@
     .cmdk{width:94vw}
     .cmdk-back{padding-top:8vh}
     /* pipeline: one swipeable column per screen */
-    .col{width:84vw;min-width:84vw}
-    .board{height:calc(100dvh - 130px)!important}
+    .col{width:86vw;min-width:86vw}
+    .board{height:calc(100dvh - 116px - env(safe-area-inset-bottom))!important}
     /* leads table compact */
     .panel-card table{font-size:11px}
     .m-only{display:inline-flex!important}

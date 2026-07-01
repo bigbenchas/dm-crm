@@ -122,6 +122,8 @@
   .atog.on .knob{left:22px}
   .kmenu{background:none;border:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;padding:2px 5px;border-radius:6px;margin:-4px -4px -4px 0}
   .kmenu:hover{background:rgba(255,255,255,.08);color:var(--text)}
+  .winwarn{background:rgba(247,168,59,.1);border:1px solid rgba(247,168,59,.35);color:#f7c065;font-size:11.5px;line-height:1.45;padding:8px 11px;border-radius:9px;margin-bottom:8px}
+  .winwarn b{color:#ffcf87}
   .kcard .top{display:flex;align-items:center;gap:10px}
   .kcard .nm{font-size:13px;font-weight:700}.kcard .hd{font-size:10.5px;color:var(--muted);margin-top:1px}
   .kcard .snip{font-size:11.5px;color:var(--muted);margin-top:9px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
@@ -855,7 +857,7 @@ async function openConvo(id){
     try{
       const r=await authGet(`?action=messages&contactId=${encodeURIComponent(l.contactId)}`);
       const j=await r.json();
-      l.msgs=(j.messages||[]).map(m=>({who:m.who,t:m.t,time:fmtTime(m.time),ai:0}));
+      l.msgs=(j.messages||[]).map(m=>({who:m.who,t:m.t,time:fmtTime(m.time),raw:m.time,ai:0}));
     }catch(e){ l.msgs=[]; }
     if(id===activeId) renderThread(l);
   }
@@ -874,7 +876,7 @@ async function openConvoModal(id){
   if(LIVE) fetchSuggestions(l);
   if(LIVE && !l.msgs){
     try{ const r=await authGet(`?action=messages&contactId=${encodeURIComponent(l.contactId)}`); const j=await r.json();
-      l.msgs=(j.messages||[]).map(m=>({who:m.who,t:m.t,time:fmtTime(m.time),ai:0})); }catch(e){ l.msgs=[]; }
+      l.msgs=(j.messages||[]).map(m=>({who:m.who,t:m.t,time:fmtTime(m.time),raw:m.time,ai:0})); }catch(e){ l.msgs=[]; }
     if(document.getElementById('convBack')&&id===activeId){ renderThread(l); rewireConvBack(); }
   }
 }
@@ -888,6 +890,19 @@ function suggestions(l){
   if(/price|cost|invest|how much/.test(last)) return ["Great question — easiest to walk you through it on a quick call. Here's my calendar: http://tinyurl.com/strategy-call-coachben","Happy to break it down live so it fits your goals — want to grab a time?"];
   if(l.needs) return ["Love that — how long have you been competing, and what's your #1 goal right now?","Solid. What's the biggest thing holding your total back at the moment?"];
   return ["Appreciate you reaching out 💪 what are you training toward right now?","Good question — quick fix incoming. Are you prepping for a meet or building a base?"];
+}
+// Instagram only lets you DM within 24h of the lead's LAST message. Warn before Ben types.
+function lastInboundMs(l){
+  if(l&&l.msgs&&l.msgs.length){ for(let i=l.msgs.length-1;i>=0;i--){ const m=l.msgs[i]; if(m.who==='them'){ const t=m.raw?new Date(m.raw).getTime():null; if(t&&!isNaN(t)) return t; } } }
+  if(l&&l.lastDir==='inbound') return l.lastMs||0;
+  return 0;
+}
+function winWarnHTML(l){
+  const ms=lastInboundMs(l); if(!ms) return '';
+  const hrs=(Date.now()-ms)/3.6e6; if(hrs<=24) return '';
+  const nm=esc((l.name||'').split(' ')[0]||'They');
+  const ago = hrs<48?Math.round(hrs)+'h':Math.round(hrs/24)+'d';
+  return `<div class="winwarn">⏳ <b>Outside Instagram’s 24-hour window</b> — ${nm}’s last message was ${ago} ago, so a DM likely won’t send until they message you again.</div>`;
 }
 function renderThread(l){
   const th=document.getElementById('thread');if(!th)return;
@@ -914,6 +929,7 @@ function renderThread(l){
    </div>
    <div class="msgs" id="msgs">${msgsHtml}</div>
    <div class="composer">
+     ${winWarnHTML(l)}
      <div class="sugg" id="sugbar"></div>
      <div class="cbox"><textarea id="reply" rows="1" placeholder="Message ${esc(l.name.split(' ')[0])}…" oninput="grow(this)"></textarea><button class="send" onclick="sendReply()">➤</button></div>
    </div>`;
@@ -994,7 +1010,7 @@ function sendFailed(l,msgObj,val,res,prev){
   const rb=document.getElementById('reply'); if(rb){ rb.value=val; grow(rb); rb.focus(); }   // restore the draft into the fresh composer
   const real=hlErrMsg(res); const raw=real.toLowerCase();
   let why;
-  if(/window|outside|allowed|re-?engag|7 ?day|24 ?hour|too old|expired message|outside.*window/.test(raw)) why='⏳ Outside Instagram’s reply window (you get 7 days after their last DM) — they need to message you again'+(real?' · '+real.slice(0,70):'');
+  if(/window|outside|allowed|re-?engag|7 ?day|24 ?hour|too old|expired message|outside.*window/.test(raw)) why='⏳ Outside Instagram’s 24-hour reply window — '+esc(l.name.split(' ')[0])+' has to message you again before you can DM'+(real?' · '+real.slice(0,60):'');
   else if(/rate|too many|limit|throttl|429/.test(raw)) why='🐢 Instagram rate limit — wait a few minutes, then send again';
   else if(/connect|disconnect|token|reauth|integration|not authorized|unauthor/.test(raw)) why='🔌 Instagram/HighLevel connection issue — reconnect the IG channel in HighLevel'+(real?' · '+real.slice(0,70):'');
   else why='Send failed'+(real?': '+real.slice(0,120):' — Instagram/HighLevel rejected it (no reason given)');
